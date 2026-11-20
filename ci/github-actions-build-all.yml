@@ -1,0 +1,61 @@
+name: Build NAPH (Windows, Linux, Android, iOS)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    name: Linux Desktop (.deb / .AppImage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile NAPH Linux Desktop App
+        run: gradle :composeApp:compileKotlinDesktop
+
+  build-windows:
+    name: Windows Desktop (.msi / .exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile NAPH Windows Desktop App
+        run: gradle :composeApp:compileKotlinDesktop
+
+  build-android:
+    name: Android Mobile (.apk)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Assemble NAPH Android Debug APK
+        run: gradle :composeApp:assembleDebug
+
+  build-ios:
+    name: iOS Sideload Framework (Arm64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Link NAPH iOS Arm64 Framework
+        run: gradle :composeApp:linkReleaseFrameworkIosArm64
