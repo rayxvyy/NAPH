@@ -23,12 +23,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -311,7 +311,7 @@ fun UnifiedVideoPlayerScreen(
                     onClick = { showExternalPlayerModal = true },
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Icon(Icons.Default.OpenInNew, contentDescription = null, tint = NaphColors.TextPrimary, modifier = Modifier.size(16.dp))
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = NaphColors.TextPrimary, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("External Player", color = NaphColors.TextPrimary)
                 }

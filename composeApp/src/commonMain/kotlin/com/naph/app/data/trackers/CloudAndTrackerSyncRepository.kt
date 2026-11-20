@@ -30,13 +30,13 @@ import kotlinx.serialization.json.put
 class CloudAndTrackerSyncRepository {
     private val client = NaphNetwork.httpClient
 
-    private val _supabaseUrl = MutableStateFlow("https://your-project.supabase.co")
+    private val _supabaseUrl = MutableStateFlow("https://pdspcutbecilcgpskgad.supabase.co")
     val supabaseUrl: StateFlow<String> = _supabaseUrl.asStateFlow()
 
-    private val _supabaseAnonKey = MutableStateFlow("")
+    private val _supabaseAnonKey = MutableStateFlow("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkc3BjdXRiZWNpbGNncHNrZ2FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUyMDcwOTcsImV4cCI6MjExMDc4MzA5N30.H_rnE0DFZIvqPrxbZ_8XZBwxiS3B_kz-zrYQ6Hgl-yg")
     val supabaseAnonKey: StateFlow<String> = _supabaseAnonKey.asStateFlow()
 
-    private val _cloudSyncStatus = MutableStateFlow("Supabase Cloud Ready (Free 24/7 Tier • Local-First Sync Active)")
+    private val _cloudSyncStatus = MutableStateFlow("Connected 24/7 to NAPH-Cloud (pdspcutbecilcgpskgad.supabase.co)")
     val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
 
     fun configureSupabase(projectUrl: String, anonKey: String) {

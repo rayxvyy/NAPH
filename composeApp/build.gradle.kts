@@ -87,8 +87,6 @@ kotlin {
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.libtorrent4j)
-            implementation(libs.libtorrent4j.linux)
-            implementation(libs.libtorrent4j.windows)
             implementation(libs.jna)
             implementation(libs.jna.platform)
         }
