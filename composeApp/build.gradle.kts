@@ -85,6 +85,8 @@ kotlin {
 
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
+            implementation(compose.desktop.linux_x64)
+            implementation(compose.desktop.windows_x64)
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.libtorrent4j)
@@ -147,8 +149,8 @@ compose.desktop {
             )
             packageName = "NAPH"
             packageVersion = "1.0.0"
-            description = "NAPH - Ultra-Snappy Cross-Platform Media Hub & P2P Streaming Engine"
-            vendor = "NAPH Media"
+            description = "Lightweight media center and sequential P2P streaming app"
+            vendor = "NAPH"
 
             linux {
                 shortcut = true
