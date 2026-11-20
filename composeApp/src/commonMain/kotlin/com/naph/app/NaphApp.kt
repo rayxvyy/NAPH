@@ -1,9 +1,20 @@
 package com.naph.app
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -40,8 +51,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.naph.app.core.model.SidebarBehaviorMode
 import com.naph.app.ui.screens.details.MediaDetailScreen
 import com.naph.app.ui.screens.home.HomeScreen
 import com.naph.app.ui.screens.library.LibraryAndServersScreen
@@ -84,14 +97,14 @@ fun NaphApp() {
                 UnifiedVideoPlayerScreen(appState = appState)
             } else {
                 Row(modifier = Modifier.fillMaxSize()) {
-                    // Left Navigation Sidebar: Home, Search, Library, Profile
+                    // Apple TV Style Compact Auto-Hover Left Sidebar (Home, Search, Library, Profile)
                     if (isDesktopOrWide) {
-                        DesktopNavigationRail(
+                        AppleTvHoverSidebar(
                             currentTab = currentTab,
                             activeProfileName = activeProfile.name,
                             activeProfileEmoji = activeProfile.avatarEmoji,
                             activeProfileColor = Color(activeProfile.avatarColorHex),
-                            sidebarExpanded = layoutConfig.sidebarAlwaysExpanded,
+                            sidebarMode = layoutConfig.sidebarMode,
                             hasActiveP2P = p2pTelemetry != null,
                             onSelectTab = { appState.selectTab(it) }
                         )
@@ -162,39 +175,61 @@ fun NaphApp() {
     }
 }
 
+/**
+ * Apple TV Style Hover-Expandable Left Sidebar:
+ * - Collapsed width: 64.dp (sleek compact icons, giving maximum width to movie posters & hero banner)
+ * - Hovered / Expanded width: 164.dp (just wide enough for "Home", "Search", "Library", and "Profile" to read clearly!)
+ */
 @Composable
-private fun DesktopNavigationRail(
+private fun AppleTvHoverSidebar(
     currentTab: NaphTab,
     activeProfileName: String,
     activeProfileEmoji: String,
     activeProfileColor: Color,
-    sidebarExpanded: Boolean,
+    sidebarMode: SidebarBehaviorMode,
     hasActiveP2P: Boolean,
     onSelectTab: (NaphTab) -> Unit
 ) {
-    val railWidth = if (sidebarExpanded) 216.dp else 76.dp
+    val hoverInteractionSource = remember { MutableInteractionSource() }
+    val isHovered by hoverInteractionSource.collectIsHoveredAsState()
+
+    val isExpanded = when (sidebarMode) {
+        SidebarBehaviorMode.AUTO_EXPAND_HOVER -> isHovered
+        SidebarBehaviorMode.ALWAYS_COMPACT -> false
+        SidebarBehaviorMode.ALWAYS_EXPANDED -> true
+    }
+
+    val animatedWidth by animateDpAsState(
+        targetValue = if (isExpanded) 164.dp else 64.dp,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "sidebar_width"
+    )
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier
-            .width(railWidth)
+            .width(animatedWidth)
             .fillMaxHeight()
+            .hoverable(hoverInteractionSource)
             .background(MaterialTheme.colorScheme.surface)
-            .border(width = 1.dp, color = MaterialTheme.colorScheme.outline)
-            .padding(vertical = 22.dp, horizontal = 12.dp)
+            .border(width = 1.dp, color = Color.White.copy(alpha = 0.08f))
+            .padding(vertical = 20.dp, horizontal = 8.dp)
     ) {
-        // Top Brand Logo
+        // Top Brand Icon ("N" -> "NAPH" on hover)
         Row(
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (isExpanded) Arrangement.Start else Arrangement.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp)
+                .height(44.dp)
+                .padding(horizontal = if (isExpanded) 8.dp else 0.dp)
         ) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(11.dp))
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.primary)
             ) {
                 Text(
@@ -204,36 +239,40 @@ private fun DesktopNavigationRail(
                     color = Color.White
                 )
             }
-            if (sidebarExpanded) {
-                Spacer(Modifier.width(12.dp))
-                Column {
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = fadeIn(tween(150)) + expandHorizontally(tween(200), expandFrom = Alignment.Start),
+                exit = shrinkHorizontally(tween(180), shrinkTowards = Alignment.Start) + fadeOut(tween(100))
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(10.dp))
                     Text(
                         text = "NAPH",
-                        style = MaterialTheme.typography.titleLarge.copy(letterSpacing = 1.8.sp),
+                        style = MaterialTheme.typography.titleLarge.copy(letterSpacing = 1.5.sp),
                         fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "MEDIA CENTER",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = MaterialTheme.colorScheme.secondary
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
         }
 
-        // Centered 4 Primary Tabs: Home, Search, Library, Profile (Exactly like Nuvio!)
+        // Centered 4 Primary Tabs: Home, Search, Library, Profile
         Column(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
         ) {
             NaphTab.entries.forEach { tab ->
                 val isSelected = currentTab == tab
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = if (isExpanded) Arrangement.Start else Arrangement.Center,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
                         .background(
                             if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
                             else Color.Transparent
@@ -241,61 +280,67 @@ private fun DesktopNavigationRail(
                         .border(
                             width = if (isSelected) 1.dp else 0.dp,
                             color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                            shape = RoundedCornerShape(14.dp)
+                            shape = RoundedCornerShape(12.dp)
                         )
                         .clickable { onSelectTab(tab) }
-                        .padding(horizontal = 14.dp, vertical = 13.dp)
+                        .padding(horizontal = if (isExpanded) 10.dp else 0.dp)
                 ) {
-                    if (tab == NaphTab.PROFILE) {
-                        // Show active profile avatar badge on Profile tab
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(RoundedCornerShape(7.dp))
-                                .background(activeProfileColor.copy(alpha = 0.30f))
-                        ) {
-                            Text(activeProfileEmoji, fontSize = 13.sp)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        if (tab == NaphTab.PROFILE) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(activeProfileColor.copy(alpha = 0.30f))
+                            ) {
+                                Text(activeProfileEmoji, fontSize = 14.sp)
+                            }
+                        } else {
+                            Icon(
+                                imageVector = iconForTab(tab),
+                                contentDescription = tab.label,
+                                tint = if (isSelected) Color.White else NaphColors.TextSecondary,
+                                modifier = Modifier.size(21.dp)
+                            )
                         }
-                    } else {
-                        Icon(
-                            imageVector = iconForTab(tab),
-                            contentDescription = tab.label,
-                            tint = if (isSelected) Color.White else NaphColors.TextSecondary,
-                            modifier = Modifier.size(22.dp)
-                        )
                     }
 
-                    if (sidebarExpanded) {
-                        Spacer(Modifier.width(14.dp))
-                        Column {
+                    AnimatedVisibility(
+                        visible = isExpanded,
+                        enter = fadeIn(tween(150)) + expandHorizontally(tween(200), expandFrom = Alignment.Start),
+                        exit = shrinkHorizontally(tween(180), shrinkTowards = Alignment.Start) + fadeOut(tween(100))
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Spacer(Modifier.width(10.dp))
                             Text(
-                                text = tab.label,
-                                style = MaterialTheme.typography.titleMedium,
+                                text = if (tab == NaphTab.PROFILE) activeProfileName.take(12) else tab.label,
+                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
                                 color = if (isSelected) Color.White else NaphColors.TextSecondary,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Clip
                             )
-                            if (tab == NaphTab.PROFILE) {
-                                Text(
-                                    text = activeProfileName,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
                         }
                     }
                 }
             }
         }
 
-        // Bottom P2P Swarm Status Pill
+        // Bottom P2P Engine Dot
         Row(
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (isExpanded) Arrangement.Start else Arrangement.Center,
             modifier = Modifier
                 .fillMaxWidth()
+                .height(36.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .padding(horizontal = if (isExpanded) 10.dp else 0.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -303,13 +348,21 @@ private fun DesktopNavigationRail(
                     .clip(CircleShape)
                     .background(if (hasActiveP2P) NaphColors.CyanGlow else NaphColors.EmeraldSeed)
             )
-            if (sidebarExpanded) {
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = if (hasActiveP2P) "P2P Swarm Active" else "P2P Engine Ready",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NaphColors.TextSecondary
-                )
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = fadeIn(tween(150)) + expandHorizontally(tween(200), expandFrom = Alignment.Start),
+                exit = shrinkHorizontally(tween(180), shrinkTowards = Alignment.Start) + fadeOut(tween(100))
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (hasActiveP2P) "P2P Active" else "P2P Ready",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = NaphColors.TextSecondary,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
             }
         }
     }

@@ -37,6 +37,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -56,11 +57,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,9 +69,14 @@ import com.naph.app.core.model.SkipSegment
 import com.naph.app.core.model.SkipSegmentType
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.theme.NaphColors
-import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
+/**
+ * Revamped Unified Video Player Screen:
+ * - Top Crisp Header Bar (`#0E1017`), Center Native `libmpv` / `ExoPlayer` / `MPVKit` Canvas,
+ *   and Dedicated Bottom Control Dock (`#0E1017`) so controls are ALWAYS 100% visible,
+ *   never obscured by the native AWT/X11 video canvas, and use pure white high-contrast fonts!
+ */
 @Composable
 fun UnifiedVideoPlayerScreen(
     appState: NaphAppState,
@@ -91,8 +97,8 @@ fun UnifiedVideoPlayerScreen(
     val currentStream = stream ?: return
 
     var isPlaying by remember { mutableStateOf(true) }
-    var positionMs by remember { mutableStateOf(40_000L) }
-    var durationMs by remember { mutableStateOf(2_400_000L) }
+    var positionMs by remember { mutableStateOf(0L) }
+    var durationMs by remember { mutableStateOf(0L) }
     var requestedSeekMs by remember { mutableStateOf<Long?>(null) }
 
     var showSubtitleDrawer by remember { mutableStateOf(false) }
@@ -100,25 +106,18 @@ fun UnifiedVideoPlayerScreen(
     var showCastModal by remember { mutableStateOf(false) }
     var autoSkippedIds by remember { mutableStateOf(setOf<SkipSegmentType>()) }
 
-    // Advance playback clock & handle automatic IntroDB / AniSkip when autoSkipIntros is enabled
-    LaunchedEffect(isPlaying, playableUrl) {
-        while (true) {
-            delay(500)
-            if (isPlaying && playableUrl != null) {
-                positionMs = (positionMs + 500L).coerceAtMost(durationMs)
-
-                val matchingSegment = skipSegments.find { positionMs in it.startMs..it.endMs }
-                if (matchingSegment != null &&
-                    activeProfile.autoSkipIntros &&
-                    matchingSegment.type !in autoSkippedIds &&
-                    positionMs >= matchingSegment.startMs + 2500L
-                ) {
-                    autoSkippedIds = autoSkippedIds + matchingSegment.type
-                    positionMs = matchingSegment.endMs + 500L
-                    requestedSeekMs = positionMs
-                    appState.showBanner("Auto-Skipped ${matchingSegment.type.label.removePrefix("Skip ")} (IntroDB)")
-                }
-            }
+    // Automatic IntroDB / AniSkip Check when real position advances
+    LaunchedEffect(positionMs) {
+        val matchingSegment = skipSegments.find { positionMs in it.startMs..it.endMs }
+        if (matchingSegment != null &&
+            activeProfile.autoSkipIntros &&
+            matchingSegment.type !in autoSkippedIds &&
+            positionMs >= matchingSegment.startMs + 2000L
+        ) {
+            autoSkippedIds = autoSkippedIds + matchingSegment.type
+            positionMs = matchingSegment.endMs + 500L
+            requestedSeekMs = positionMs
+            appState.showBanner("Auto-Skipped ${matchingSegment.type.label.removePrefix("Skip ")}")
         }
     }
 
@@ -139,366 +138,376 @@ fun UnifiedVideoPlayerScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 1. Native Video Playback Surface (libmpv / ExoPlayer / MPVKit)
-        if (playableUrl != null) {
-            NativeVideoSurface(
-                streamUrl = playableUrl!!,
-                isPlaying = isPlaying,
-                seekToMs = requestedSeekMs,
-                subtitleDelayMs = subConfig.delayOffsetMs,
-                onPositionChanged = { pos, dur ->
-                    if (dur > 0) {
-                        positionMs = pos
-                        durationMs = dur
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            // Sequential P2P Swarm Header Pre-Buffer Screen
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(NaphColors.GlassSurface)
-                        .border(1.dp, NaphColors.CyanGlow.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
-                        .padding(32.dp)
-                ) {
-                    CircularProgressIndicator(color = NaphColors.CyanGlow)
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = "NAPH Sequential P2P Engine • Pre-Buffering Header Pieces...",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = NaphColors.CyanGlow
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    p2pTelemetry?.let { tel ->
-                        Text(
-                            text = "Connected Peers: ${tel.connectedPeers} (${tel.totalSeeds} Seeds) • Speed: ${formatBytesPerSec(tel.downloadSpeedBytesPerSec)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = NaphColors.TextPrimary
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        LinearProgressIndicator(
-                            progress = { (tel.bufferProgressPercent / 100f).coerceIn(0f, 1f) },
-                            color = NaphColors.CyanGlow,
-                            trackColor = NaphColors.ElevatedBorder,
-                            modifier = Modifier
-                                .width(360.dp)
-                                .height(6.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // 2. Live Styled ASS/SSA & SRT Subtitle Renderer Overlay
-        if (selectedSubtitle != null && playableUrl != null) {
-            Box(
-                contentAlignment = Alignment.BottomCenter,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = 115.dp)
-                    .offset { IntOffset(0, -subConfig.verticalOffsetDp.roundToInt()) }
-            ) {
-                val sampleLine = when (selectedSubtitle?.lang) {
-                    "jpn" -> "「NAPH シーケンシャル P2P & libass スタイル字幕エンジン」"
-                    "spa" -> "« Motor P2P secuencial NAPH • Subtítulos estilizados en vivo »"
-                    else -> "“We must not fear. Fear is the mind-killer.” [${selectedSubtitle?.label} • Delay: ${subConfig.delayOffsetMs}ms]"
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.Black.copy(alpha = subConfig.backgroundOpacity))
-                        .border(
-                            width = (subConfig.outlineWidthPx / 2f).dp,
-                            color = Color(subConfig.outlineColorHex).copy(alpha = 0.65f),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        .padding(horizontal = 18.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        text = sampleLine,
-                        fontSize = subConfig.fontSizeSp.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = if (subConfig.fontFamily == "Monospace") FontFamily.Monospace
-                        else if (subConfig.fontFamily == "Serif") FontFamily.Serif
-                        else FontFamily.SansSerif,
-                        color = Color(subConfig.textColorHex),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        }
-
-        // 3. Top Header Overlay (Title + Real-Time P2P Swarm Telemetry + Cast & External Player)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color(0xE6070709), Color.Transparent)
-                    )
-                )
-                .padding(horizontal = 24.dp, vertical = 18.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = { appState.stopPlaybackAndSaveProgress(positionMs, durationMs) },
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(NaphColors.GlassSurface)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Exit Player", tint = Color.White)
-                }
-
-                Spacer(Modifier.width(16.dp))
-
-                Column {
-                    Text(
-                        text = buildString {
-                            append(media.name)
-                            if (episode != null) {
-                                append(" • S${episode!!.season}:E${episode!!.episode} — ${episode!!.displayTitle}")
-                            }
-                        },
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        text = "${currentStream.detectedResolution} ${currentStream.detectedHdrBadge.orEmpty()} • ${currentStream.addonName}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = NaphColors.CyanGlow
-                    )
-                }
-            }
-
-            // Live P2P Swarm Stats Pill + Action Buttons
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                p2pTelemetry?.let { tel ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NaphColors.GlassSurface)
-                            .border(1.dp, NaphColors.CyanGlow.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CloudQueue,
-                            contentDescription = null,
-                            tint = NaphColors.CyanGlow,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "P2P ${formatBytesPerSec(tel.downloadSpeedBytesPerSec)} • ${tel.connectedPeers} Peers • Temp Cache",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = NaphColors.TextPrimary
-                        )
-                    }
-                }
-
-                OutlinedButton(
-                    onClick = { showExternalPlayerModal = true },
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = NaphColors.TextPrimary, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("External Player", color = NaphColors.TextPrimary)
-                }
-
-                OutlinedButton(
-                    onClick = { showCastModal = true },
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Default.Cast, contentDescription = null, tint = NaphColors.CyanGlow, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Cast / AirPlay", color = NaphColors.TextPrimary)
-                }
-
-                Button(
-                    onClick = { showSubtitleDrawer = !showSubtitleDrawer },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (showSubtitleDrawer) NaphColors.ElectricPrimary else NaphColors.CardSurface
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Default.Subtitles, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Subtitles & ASS Style")
-                }
-            }
-        }
-
-        // 4. Floating Smart Skip Button (IntroDB / AniSkip: Skip Intro, Skip Recap, Skip Credits)
-        if (activeSkipSegment != null) {
-            Button(
-                onClick = {
-                    positionMs = activeSkipSegment.endMs + 500L
-                    requestedSeekMs = positionMs
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color.Black
-                ),
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 32.dp, bottom = 128.dp)
-            ) {
-                Icon(Icons.Default.SkipNext, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = "${activeSkipSegment.type.label} (IntroDB)",
-                    fontWeight = FontWeight.ExtraBold
-                )
-            }
-        }
-
-        // 5. Netflix-Style "Up Next Episode" Binge Card (When near end of episode or on demand)
-        if (hasNextEpisode && (positionMs >= durationMs - 180_000L || activeSkipSegment?.type == SkipSegmentType.OUTRO)) {
-            Button(
-                onClick = { appState.playNextEpisodeInQueue() },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = NaphColors.ElectricPrimary,
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 32.dp, bottom = 128.dp)
-            ) {
-                Icon(Icons.Default.SkipNext, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Up Next: Play Next Episode", fontWeight = FontWeight.Bold)
-            }
-        }
-
-        // 6. Bottom Playback Controls & Timeline Scrubber
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color(0xF2070709))
-                    )
-                )
-                .padding(horizontal = 28.dp, vertical = 18.dp)
-        ) {
-            // Scrubber Slider with Intro/Outro Segment Highlights
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = formatDurationMs(positionMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NaphColors.TextPrimary
-                )
-                Spacer(Modifier.width(12.dp))
-                Slider(
-                    value = if (durationMs > 0) positionMs.toFloat() / durationMs.toFloat() else 0f,
-                    onValueChange = { frac ->
-                        positionMs = (frac * durationMs).toLong()
-                        requestedSeekMs = positionMs
-                    },
-                    colors = SliderDefaults.colors(
-                        thumbColor = NaphColors.CyanGlow,
-                        activeTrackColor = NaphColors.ElectricPrimary,
-                        inactiveTrackColor = NaphColors.ElevatedBorder
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = formatDurationMs(durationMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NaphColors.TextSecondary
-                )
-            }
-
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 1. TOP PLAYER HEADER BAR (High-Contrast Dark Surface — Never Hidden Under Video Canvas)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0E1017))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f))
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.weight(1f)
                 ) {
                     IconButton(
-                        onClick = {
-                            positionMs = (positionMs - 10_000L).coerceAtLeast(0L)
-                            requestedSeekMs = positionMs
-                        }
-                    ) {
-                        Icon(Icons.Default.FastRewind, contentDescription = "-10s", tint = Color.White)
-                    }
-
-                    IconButton(
-                        onClick = { isPlaying = !isPlaying },
+                        onClick = { appState.stopPlaybackAndSaveProgress(positionMs, durationMs) },
                         modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(NaphColors.ElectricPrimary)
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF1A1E2B))
                     ) {
                         Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = "Play/Pause",
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
                             tint = Color.White
                         )
                     }
 
-                    IconButton(
-                        onClick = {
-                            positionMs = (positionMs + 10_000L).coerceAtMost(durationMs)
-                            requestedSeekMs = positionMs
-                        }
-                    ) {
-                        Icon(Icons.Default.FastForward, contentDescription = "+10s", tint = Color.White)
-                    }
+                    Spacer(Modifier.width(14.dp))
 
-                    if (hasNextEpisode) {
-                        OutlinedButton(
-                            onClick = { appState.playNextEpisodeInQueue() },
-                            shape = RoundedCornerShape(10.dp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = buildString {
+                                append(media.name)
+                                if (episode != null) {
+                                    append("  •  S${episode!!.season}:E${episode!!.episode} — ${episode!!.displayTitle}")
+                                }
+                            },
+                            style = MaterialTheme.typography.titleLarge.copy(fontSize = 17.sp),
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.White)
-                            Spacer(Modifier.width(4.dp))
-                            Text("Next Episode", color = Color.White)
+                            Text(
+                                text = currentStream.detectedResolution,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = NaphColors.GoldRating
+                            )
+                            currentStream.detectedHdrBadge?.let {
+                                Text("• $it", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
+                            }
+                            currentStream.detectedFileSizeLabel?.let {
+                                Text("• $it", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                            }
+                            Text(
+                                text = "• ${currentStream.addonName}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = NaphColors.TextSecondary
+                            )
                         }
                     }
                 }
 
-                // Quick Jump to Intro / Outro Test Buttons
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    skipSegments.forEach { seg ->
-                        FilterChip(
-                            selected = positionMs in seg.startMs..seg.endMs,
+                // Live P2P Swarm Pill + Player Action Buttons
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    p2pTelemetry?.let { tel ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF161A26))
+                                .border(1.dp, NaphColors.CyanGlow.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudQueue,
+                                contentDescription = null,
+                                tint = NaphColors.CyanGlow,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "P2P ${formatBytesPerSec(tel.downloadSpeedBytesPerSec)} • ${tel.connectedPeers} Peers (${tel.totalSeeds} Seeds)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White
+                            )
+                        }
+                    }
+
+                    // Skip Intro / Credits Button in Header if active
+                    if (activeSkipSegment != null) {
+                        Button(
                             onClick = {
-                                positionMs = seg.startMs
+                                positionMs = activeSkipSegment.endMs + 500L
                                 requestedSeekMs = positionMs
                             },
-                            label = { Text("Jump to ${seg.type.name} (${formatDurationMs(seg.startMs)})") }
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White,
+                                contentColor = Color.Black
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(activeSkipSegment.type.label, fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
+
+                    Button(
+                        onClick = { showExternalPlayerModal = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1A1E2B),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("External Player", color = Color.White)
+                    }
+
+                    Button(
+                        onClick = { showCastModal = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1A1E2B),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Cast, contentDescription = null, tint = NaphColors.CyanGlow, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Cast", color = Color.White)
+                    }
+
+                    Button(
+                        onClick = { showSubtitleDrawer = !showSubtitleDrawer },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (showSubtitleDrawer) MaterialTheme.colorScheme.primary else Color(0xFF1A1E2B),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Subtitles, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Subtitles", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            // 2. CENTER VIDEO STAGE (Real libmpv / ExoPlayer / MPVKit Canvas)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(Color.Black)
+            ) {
+                if (!playableUrl.isNullOrBlank()) {
+                    NativeVideoSurface(
+                        streamUrl = playableUrl!!,
+                        isPlaying = isPlaying,
+                        seekToMs = requestedSeekMs,
+                        subtitleDelayMs = subConfig.delayOffsetMs,
+                        onPositionChanged = { pos, dur ->
+                            positionMs = pos
+                            durationMs = dur
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    // Live P2P Swarm Connecting & Sequential Piece Buffering Screen
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier
+                            .width(480.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color(0xFF131620))
+                            .border(1.dp, NaphColors.CyanGlow.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+                            .padding(32.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            color = NaphColors.CyanGlow,
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(42.dp)
+                        )
+                        Text(
+                            text = "Connecting to BitTorrent P2P Swarm...",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White
+                        )
+                        Text(
+                            text = currentStream.cleanTitleLine,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = NaphColors.TextSecondary,
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
+                        p2pTelemetry?.let { tel ->
+                            Text(
+                                text = "Peers: ${tel.connectedPeers} • Seeds: ${tel.totalSeeds} • Speed: ${formatBytesPerSec(tel.downloadSpeedBytesPerSec)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = NaphColors.CyanGlow
+                            )
+                            LinearProgressIndicator(
+                                progress = { (tel.bufferProgressPercent / 100f).coerceIn(0.05f, 1f) },
+                                color = NaphColors.CyanGlow,
+                                trackColor = Color.White.copy(alpha = 0.15f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3. BOTTOM PLAYBACK CONTROL DOCK (High-Contrast Dark Surface — Always Readable & Clickable!)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0E1017))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f))
+                    .padding(horizontal = 24.dp, vertical = 14.dp)
+            ) {
+                // Timeline Scrubber Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = formatDurationMs(positionMs),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp),
+                        color = Color.White
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Slider(
+                        value = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
+                        onValueChange = { frac ->
+                            if (durationMs > 0L) {
+                                val target = (frac * durationMs).toLong()
+                                positionMs = target
+                                requestedSeekMs = target
+                            }
+                        },
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.22f)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        text = if (durationMs > 0L) formatDurationMs(durationMs) else "LIVE / BUFFERING",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp),
+                        color = NaphColors.TextSecondary
+                    )
+                }
+
+                // Transport Controls Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val target = (positionMs - 10_000L).coerceAtLeast(0L)
+                                positionMs = target
+                                requestedSeekMs = target
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1A1E2B),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            Icon(Icons.Default.FastRewind, contentDescription = "-10s", modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("-10s", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { isPlaying = !isPlaying },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 11.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = Color.White
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (isPlaying) "Pause" else "Play",
+                                color = Color.White,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                val target = if (durationMs > 0L) (positionMs + 10_000L).coerceAtMost(durationMs) else positionMs + 10_000L
+                                positionMs = target
+                                requestedSeekMs = target
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1A1E2B),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            Text("+10s", color = Color.White, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.Default.FastForward, contentDescription = "+10s", modifier = Modifier.size(18.dp))
+                        }
+
+                        if (hasNextEpisode) {
+                            Button(
+                                onClick = { appState.playNextEpisodeInQueue() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1A1E2B),
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                            ) {
+                                Icon(Icons.Default.SkipNext, contentDescription = null, tint = NaphColors.CyanGlow)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Next Episode", color = Color.White, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    // Active Subtitle & Audio Status Label
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Subtitles: ${selectedSubtitle?.label ?: "Embedded / Auto"} (${subConfig.delayOffsetMs}ms)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = NaphColors.TextSecondary
                         )
                     }
                 }
             }
         }
 
-        // 7. Live Subtitle Search, Delay Sync & Appearance Editor Drawer
+        // 4. Live Subtitle Search, Delay Sync & Appearance Editor Drawer
         if (showSubtitleDrawer) {
             LiveSubtitleEditorDrawer(
                 subtitles = subtitles,
@@ -511,7 +520,7 @@ fun UnifiedVideoPlayerScreen(
             )
         }
 
-        // 8. External Player Handoff Modal (VLC, MPV, IINA, Infuse, Outplayer)
+        // 5. External Player Handoff Modal
         if (showExternalPlayerModal) {
             ExternalPlayerHandoffDialog(
                 streamUrl = playableUrl ?: currentStream.url.orEmpty(),
@@ -521,17 +530,16 @@ fun UnifiedVideoPlayerScreen(
                     showExternalPlayerModal = false
                     appState.showBanner(
                         if (ok) "Launched $playerName with active stream URL"
-                        else "Copied stream URL for $playerName: ${playableUrl ?: currentStream.url}"
+                        else "Stream URL: ${playableUrl ?: currentStream.url}"
                     )
                 }
             )
         }
 
-        // 9. Chromecast / AirPlay Discovery Modal
+        // 6. Chromecast / AirPlay Discovery Modal
         if (showCastModal) {
             CastAndAirPlayDialog(
                 title = media.name,
-                streamUrl = playableUrl ?: currentStream.url.orEmpty(),
                 onDismiss = { showCastModal = false },
                 onSelectDevice = { deviceName ->
                     showCastModal = false
@@ -554,10 +562,10 @@ private fun LiveSubtitleEditorDrawer(
 ) {
     Column(
         modifier = modifier
-            .width(390.dp)
+            .width(380.dp)
             .fillMaxHeight()
-            .background(Color(0xF50E0F14))
-            .border(1.dp, NaphColors.ElevatedBorder)
+            .background(Color(0xF811131B))
+            .border(1.dp, Color.White.copy(alpha = 0.14f))
             .padding(22.dp)
             .verticalScroll(rememberScrollState())
     ) {
@@ -566,22 +574,21 @@ private fun LiveSubtitleEditorDrawer(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Subtitles & libass Live Editor", style = MaterialTheme.typography.titleLarge)
+            Text("Subtitles & Styling", style = MaterialTheme.typography.titleLarge, color = Color.White)
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
         }
 
-        Spacer(Modifier.height(14.dp))
+        HorizontalDivider(color = Color.White.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 12.dp))
 
-        // Track Selector
-        Text("ACTIVE SUBTITLE TRACK", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
+        Text("SUBTITLE TRACKS (${subtitles.size})", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
         Spacer(Modifier.height(8.dp))
 
         FilterChip(
             selected = selectedTrack == null,
             onClick = { onSelectTrack(null) },
-            label = { Text("Off (Disable Subtitles)") }
+            label = { Text("Off / Embedded Default") }
         )
 
         subtitles.forEach { track ->
@@ -592,35 +599,33 @@ private fun LiveSubtitleEditorDrawer(
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(if (selectedTrack?.id == track.id) NaphColors.ElectricPrimary.copy(alpha = 0.22f) else NaphColors.CardSurface)
+                    .background(if (selectedTrack?.id == track.id) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else Color(0xFF1A1E2B))
                     .clickable { onSelectTrack(track) }
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
-                Text(track.label, style = MaterialTheme.typography.bodyMedium, color = NaphColors.TextPrimary)
+                Text(track.label, style = MaterialTheme.typography.bodyMedium, color = Color.White)
                 Text(track.format.uppercase(), style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
             }
         }
 
         Spacer(Modifier.height(18.dp))
 
-        // Sync Delay Offset (+/- ms)
-        Text("SYNC DELAY OFFSET (${config.delayOffsetMs} ms)", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
+        Text("SUBTITLE DELAY (${config.delayOffsetMs} ms)", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { onUpdateConfig(config.copy(delayOffsetMs = config.delayOffsetMs - 100L)) }) {
-                Text("-100ms")
+                Text("-100ms", color = Color.White)
             }
             OutlinedButton(onClick = { onUpdateConfig(config.copy(delayOffsetMs = 0L)) }) {
-                Text("Reset (0ms)")
+                Text("0ms", color = Color.White)
             }
             OutlinedButton(onClick = { onUpdateConfig(config.copy(delayOffsetMs = config.delayOffsetMs + 100L)) }) {
-                Text("+100ms")
+                Text("+100ms", color = Color.White)
             }
         }
 
         Spacer(Modifier.height(18.dp))
 
-        // Font Size Slider
         Text("FONT SIZE (${config.fontSizeSp.toInt()} sp)", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
         Slider(
             value = config.fontSizeSp,
@@ -628,66 +633,23 @@ private fun LiveSubtitleEditorDrawer(
             valueRange = 14f..38f
         )
 
-        // Vertical Offset Slider
-        Text("VERTICAL POSITION (${config.verticalOffsetDp.toInt()} dp)", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
-        Slider(
-            value = config.verticalOffsetDp,
-            onValueChange = { onUpdateConfig(config.copy(verticalOffsetDp = it)) },
-            valueRange = 0f..140f
-        )
-
-        // Background Box Opacity
-        Text("BACKGROUND BOX OPACITY (${(config.backgroundOpacity * 100).toInt()}%)", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
+        Text("BACKGROUND OPACITY (${(config.backgroundOpacity * 100).toInt()}%)", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
         Slider(
             value = config.backgroundOpacity,
             onValueChange = { onUpdateConfig(config.copy(backgroundOpacity = it)) },
             valueRange = 0f..0.95f
         )
 
-        // Font Family
-        Text("FONT FAMILY", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Sans-Serif", "Serif", "Monospace").forEach { font ->
-                FilterChip(
-                    selected = config.fontFamily == font,
-                    onClick = { onUpdateConfig(config.copy(fontFamily = font)) },
-                    label = { Text(font) }
-                )
-            }
-        }
-
         Spacer(Modifier.height(12.dp))
 
-        // Text Color Presets
-        Text("SUBTITLE COLOR", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            listOf(
-                0xFFFFFFFF to "White",
-                0xFFF5C518 to "Cinema Yellow",
-                0xFF06B6D4 to "Cyan",
-                0xFF10B981 to "Green"
-            ).forEach { (hex, name) ->
-                FilterChip(
-                    selected = config.textColorHex == hex,
-                    onClick = { onUpdateConfig(config.copy(textColorHex = hex)) },
-                    label = { Text(name) }
-                )
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-
-        // libass Styling Toggle
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Preserve ASS/SSA Typesetting", style = MaterialTheme.typography.titleMedium)
-                Text("Render embedded anime fonts & positioning via libass", style = MaterialTheme.typography.bodyMedium)
+                Text("Preserve ASS/SSA Styling", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Text("Render custom anime fonts & positioning via libass", style = MaterialTheme.typography.bodyMedium, color = NaphColors.TextSecondary)
             }
             Switch(
                 checked = config.preserveAssStyling,
@@ -716,17 +678,18 @@ private fun ExternalPlayerHandoffDialog(
             modifier = Modifier
                 .width(420.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(NaphColors.DeepSurface)
-                .border(1.dp, NaphColors.ElevatedBorder, RoundedCornerShape(18.dp))
+                .background(Color(0xFF131620))
+                .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(18.dp))
                 .padding(24.dp)
         ) {
-            Text("Handoff Stream to External Player", style = MaterialTheme.typography.titleLarge)
+            Text("Open in External Player", style = MaterialTheme.typography.titleLarge, color = Color.White)
             Text(
-                text = "Passes the local HTTP P2P Byte-Range or Debrid stream URL directly to your installed player:",
-                style = MaterialTheme.typography.bodyMedium
+                text = "Hand off the active stream URL to an external media player:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = NaphColors.TextSecondary
             )
 
-            listOf("mpv (External Desktop/Mobile)", "VLC Media Player", "IINA (macOS)", "Infuse (iOS / Apple TV)", "Outplayer (iOS)").forEach { player ->
+            listOf("mpv", "VLC Media Player", "IINA (macOS)", "Infuse (iOS)", "Outplayer (iOS)").forEach { player ->
                 Button(
                     onClick = {
                         val bin = when {
@@ -738,10 +701,10 @@ private fun ExternalPlayerHandoffDialog(
                         val ok = launchExternalPlayer(bin, streamUrl, title)
                         onLaunched(player, ok)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = NaphColors.CardSurface),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2231)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(player, color = NaphColors.TextPrimary)
+                    Text(player, color = Color.White, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -751,7 +714,6 @@ private fun ExternalPlayerHandoffDialog(
 @Composable
 private fun CastAndAirPlayDialog(
     title: String,
-    streamUrl: String,
     onDismiss: () -> Unit,
     onSelectDevice: (String) -> Unit
 ) {
@@ -767,30 +729,30 @@ private fun CastAndAirPlayDialog(
             modifier = Modifier
                 .width(420.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(NaphColors.DeepSurface)
+                .background(Color(0xFF131620))
                 .border(1.dp, NaphColors.CyanGlow.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
                 .padding(24.dp)
         ) {
-            Text("Chromecast & AirPlay Discovery", style = MaterialTheme.typography.titleLarge)
+            Text("Chromecast & AirPlay", style = MaterialTheme.typography.titleLarge, color = Color.White)
             Text(
-                text = "Stream '$title' directly to a local network TV or receiver:",
-                style = MaterialTheme.typography.bodyMedium
+                text = "Cast '$title' to a network TV or receiver:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = NaphColors.TextSecondary
             )
 
             listOf(
-                "Living Room 4K TV (Chromecast Ultra)",
-                "Apple TV 4K (AirPlay 2 Receiver)",
-                "Bedroom NVIDIA Shield TV (Google Cast)",
-                "DLNA / UPnP Smart TV Renderer"
+                "Living Room 4K TV (Chromecast)",
+                "Apple TV 4K (AirPlay 2)",
+                "DLNA / UPnP Smart TV"
             ).forEach { device ->
                 Button(
                     onClick = { onSelectDevice(device) },
-                    colors = ButtonDefaults.buttonColors(containerColor = NaphColors.CardSurface),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2231)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.Cast, contentDescription = null, tint = NaphColors.CyanGlow)
                     Spacer(Modifier.width(10.dp))
-                    Text(device, color = NaphColors.TextPrimary)
+                    Text(device, color = Color.White)
                 }
             }
         }
@@ -810,7 +772,11 @@ private fun formatDurationMs(ms: Long): String {
 }
 
 private fun formatBytesPerSec(bytes: Long): String {
-    val mb = bytes.toDouble() / (1024.0 * 1024.0)
-    val rounded = (mb * 10.0).roundToInt() / 10.0
-    return "$rounded MB/s"
+    if (bytes >= 1024L * 1024L) {
+        val mb = bytes.toDouble() / (1024.0 * 1024.0)
+        val rounded = (mb * 10.0).roundToInt() / 10.0
+        return "$rounded MB/s"
+    }
+    val kb = (bytes / 1024L).coerceAtLeast(0L)
+    return "$kb KB/s"
 }

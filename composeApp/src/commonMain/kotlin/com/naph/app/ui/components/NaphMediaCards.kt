@@ -36,29 +36,40 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.naph.app.core.model.AggregatedRatings
+import com.naph.app.core.model.LayoutCustomizationConfig
 import com.naph.app.core.model.MediaItem
 import com.naph.app.core.model.WatchProgressEntry
 import com.naph.app.ui.theme.NaphColors
 
+/**
+ * Pure Netflix-Style Poster Card:
+ * - Zero addon/catalog badges on the poster artwork ("Hosted by...", etc. completely removed!)
+ * - Clean poster artwork with customizable corner radius & card width
+ * - Optional title below or rating badge only if enabled by user in Layout Customization Settings
+ */
 @Composable
 fun CinemaPosterCard(
     item: MediaItem,
     onClick: () -> Unit,
+    layoutConfig: LayoutCustomizationConfig = LayoutCustomizationConfig(),
     modifier: Modifier = Modifier
 ) {
+    val cornerShape = RoundedCornerShape(layoutConfig.posterCornerRadiusDp.dp)
+    val cardWidth = layoutConfig.posterSizePreset.widthDp.dp
+
     Column(
         modifier = modifier
-            .width(164.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .width(cardWidth)
+            .clip(cornerShape)
             .clickable { onClick() }
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(14.dp))
-                .background(NaphColors.CardSurface)
-                .border(1.dp, NaphColors.ElevatedBorder, RoundedCornerShape(14.dp))
+                .clip(cornerShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(0.75.dp, Color.White.copy(alpha = 0.10f), cornerShape)
         ) {
             if (!item.poster.isNullOrBlank()) {
                 AsyncImage(
@@ -67,83 +78,59 @@ fun CinemaPosterCard(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
+            } else {
+                // Fallback title only if poster URL is missing
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize().padding(12.dp)
+                ) {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White,
+                        maxLines = 3
+                    )
+                }
             }
 
-            // Bottom gradient overlay
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color(0xCC070709)),
-                            startY = 180f
-                        )
-                    )
-            )
-
-            // Rating Badge (Top Right)
-            if (!item.imdbRating.isNullOrBlank()) {
+            // Optional IMDb Rating Badge (OFF by default so poster is 100% clean like Netflix)
+            if (layoutConfig.showRatingBadgeOnPoster && !item.imdbRating.isNullOrBlank()) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(8.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xD90E0F14))
-                        .border(0.5.dp, NaphColors.GoldRating.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xD90A0B0E))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = null,
                         tint = NaphColors.GoldRating,
-                        modifier = Modifier.size(12.dp)
+                        modifier = Modifier.size(11.dp)
                     )
                     Spacer(Modifier.width(3.dp))
                     Text(
                         text = item.imdbRating,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = NaphColors.TextPrimary
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = Color.White
                     )
                 }
             }
-
-            // Source / Type Badge (Top Left)
-            val badgeText = if (item.sourceOrigin != "Addon") item.sourceOrigin else item.type.uppercase()
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(
-                        if (item.sourceOrigin != "Addon") NaphColors.CyanGlow.copy(alpha = 0.85f)
-                        else Color(0xB3151720)
-                    )
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = badgeText,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                    color = if (item.sourceOrigin != "Addon") Color.Black else NaphColors.TextSecondary
-                )
-            }
         }
 
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            text = item.name,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            text = listOfNotNull(item.releaseInfo, item.genres.firstOrNull()).joinToString(" • "),
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
-            color = NaphColors.TextMuted,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        // Optional Title Below Poster (OFF by default for pure Netflix poster look)
+        if (layoutConfig.showPosterTitlesBelow) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp),
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -155,16 +142,16 @@ fun ContinueWatchingCard(
 ) {
     Column(
         modifier = modifier
-            .width(270.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(NaphColors.CardSurface)
-            .border(1.dp, NaphColors.ElevatedBorder, RoundedCornerShape(14.dp))
+            .width(260.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
             .clickable { onClick() }
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(148.dp)
+                .height(144.dp)
         ) {
             AsyncImage(
                 model = entry.backdropUrl ?: entry.posterUrl,
@@ -177,25 +164,24 @@ fun ContinueWatchingCard(
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(Color(0x33070709), Color(0xE6070709))
+                            colors = listOf(Color(0x22000000), Color(0xE6070709))
                         )
                     )
             )
 
-            // Play Icon Circle
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(NaphColors.ElectricPrimary.copy(alpha = 0.9f))
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(21.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.92f))
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Resume",
                     tint = Color.White,
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
@@ -207,13 +193,14 @@ fun ContinueWatchingCard(
                 Text(
                     text = entry.title,
                     style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 val sub = if (entry.season != null && entry.episode != null) {
                     "S${entry.season}:E${entry.episode} • ${entry.episodeTitle.orEmpty()}"
                 } else {
-                    "${((entry.durationMs - entry.positionMs) / 60000L).coerceAtLeast(1)}m remaining"
+                    "${((entry.durationMs - entry.positionMs) / 60000L).coerceAtLeast(1)}m left"
                 }
                 Text(
                     text = sub,
@@ -227,69 +214,56 @@ fun ContinueWatchingCard(
 
         LinearProgressIndicator(
             progress = { entry.progressFraction },
-            color = NaphColors.ElectricPrimary,
-            trackColor = NaphColors.ElevatedBorder,
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = Color.White.copy(alpha = 0.15f),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(4.dp)
+                .height(3.5.dp)
         )
     }
 }
 
 /**
- * Aggregated Ratings Bar (IMDb, Rotten Tomatoes, Metacritic, Trakt, MDBList)
+ * Customizable Ratings Bar:
+ * Only renders the specific rating providers that the user has toggled ON in Settings!
+ * (Default: Only IMDb is ON; Rotten Tomatoes, Metacritic, Trakt, and MDBList are optional toggles in Settings)
  */
 @Composable
 fun AggregatedRatingsBar(
     ratings: AggregatedRatings,
+    layoutConfig: LayoutCustomizationConfig = LayoutCustomizationConfig(),
     modifier: Modifier = Modifier
 ) {
+    val activePills = buildList {
+        if (layoutConfig.showImdbRating && !ratings.imdb.isNullOrBlank()) {
+            add(Triple("IMDb", ratings.imdb, NaphColors.GoldRating))
+        }
+        if (layoutConfig.showRottenTomatoesCritics && !ratings.rottenTomatoesCritics.isNullOrBlank()) {
+            add(Triple("🍅 RT", ratings.rottenTomatoesCritics, Color(0xFFFA320A)))
+        }
+        if (layoutConfig.showRottenTomatoesAudience && !ratings.rottenTomatoesAudience.isNullOrBlank()) {
+            add(Triple("🍿 Audience", ratings.rottenTomatoesAudience, Color(0xFFF59E0B)))
+        }
+        if (layoutConfig.showMetacriticRating && !ratings.metacritic.isNullOrBlank()) {
+            add(Triple("Metacritic", ratings.metacritic, NaphColors.EmeraldSeed))
+        }
+        if (layoutConfig.showTraktRating && !ratings.trakt.isNullOrBlank()) {
+            add(Triple("Trakt", ratings.trakt, Color(0xFFED1C24)))
+        }
+        if (layoutConfig.showMdbListRating && !ratings.mdbListScore.isNullOrBlank()) {
+            add(Triple("MDBList", ratings.mdbListScore, NaphColors.CyanGlow))
+        }
+    }
+
+    if (activePills.isEmpty()) return
+
     Row(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
     ) {
-        ratings.imdb?.let {
-            RatingBadgePill(
-                label = "IMDb",
-                value = it,
-                accentColor = NaphColors.GoldRating
-            )
-        }
-        ratings.rottenTomatoesCritics?.let {
-            RatingBadgePill(
-                label = "🍅 RT Critics",
-                value = it,
-                accentColor = Color(0xFFFA320A)
-            )
-        }
-        ratings.rottenTomatoesAudience?.let {
-            RatingBadgePill(
-                label = "🍿 RT Audience",
-                value = it,
-                accentColor = Color(0xFFF59E0B)
-            )
-        }
-        ratings.metacritic?.let {
-            RatingBadgePill(
-                label = "Metacritic",
-                value = it,
-                accentColor = NaphColors.EmeraldSeed
-            )
-        }
-        ratings.trakt?.let {
-            RatingBadgePill(
-                label = "Trakt",
-                value = it,
-                accentColor = Color(0xFFED1C24)
-            )
-        }
-        ratings.mdbListScore?.let {
-            RatingBadgePill(
-                label = "MDBList",
-                value = it,
-                accentColor = NaphColors.CyanGlow
-            )
+        activePills.forEach { (label, value, accent) ->
+            RatingBadgePill(label = label, value = value, accentColor = accent)
         }
     }
 }
@@ -303,10 +277,10 @@ private fun RatingBadgePill(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(NaphColors.CardSurface)
-            .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xCC13151B))
+            .border(1.dp, accentColor.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 5.dp)
     ) {
         Text(
             text = label,
@@ -318,7 +292,7 @@ private fun RatingBadgePill(
         Text(
             text = value,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
-            color = NaphColors.TextPrimary
+            color = Color.White
         )
     }
 }

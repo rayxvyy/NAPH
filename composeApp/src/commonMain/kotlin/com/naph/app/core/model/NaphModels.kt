@@ -1,6 +1,7 @@
 package com.naph.app.core.model
 
 import kotlinx.serialization.Serializable
+import kotlin.math.roundToInt
 
 /**
  * Stremio v3 Manifest Protocol & NAPH Unified Media Domain Models
@@ -141,29 +142,84 @@ data class MediaStream(
     val isP2PTorrent: Boolean
         get() = !infoHash.isNullOrBlank() && url.isNullOrBlank()
 
+    val cleanTitleLine: String
+        get() {
+            val raw = behaviorHints?.filename
+                ?: (title ?: description ?: "").lines().firstOrNull { it.isNotBlank() }
+                ?: name
+                ?: "Video Stream"
+            return raw.trim()
+        }
+
     val displayDetails: String
         get() = title ?: description ?: (url ?: "P2P InfoHash: ${infoHash?.take(10)}...")
 
     val detectedResolution: String
         get() {
-            val combined = "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()}".uppercase()
+            val combined = "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
             return when {
                 "2160P" in combined || "4K" in combined || "UHD" in combined -> "4K UHD"
+                "1440P" in combined || "2K" in combined -> "1440p"
                 "1080P" in combined || "FHD" in combined -> "1080p"
-                "720P" in combined || "HD" in combined -> "720p"
+                "720P" in combined -> "720p"
+                "480P" in combined -> "480p"
                 else -> "HD"
             }
         }
 
     val detectedHdrBadge: String?
         get() {
-            val combined = "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()}".uppercase()
+            val combined = "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
             return when {
-                "DV" in combined || "DOLBY VISION" in combined -> "Dolby Vision"
+                "DV" in combined || "DOLBY VISION" in combined || "DOVI" in combined -> "Dolby Vision"
                 "HDR10+" in combined -> "HDR10+"
-                "HDR" in combined -> "HDR"
+                "HDR" in combined -> "HDR10"
                 else -> null
             }
+        }
+
+    val detectedVideoCodec: String?
+        get() {
+            val combined = "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
+            return when {
+                "HEVC" in combined || "X265" in combined || "H265" in combined || "H.265" in combined -> "HEVC"
+                "AV1" in combined -> "AV1"
+                "AVC" in combined || "X264" in combined || "H264" in combined || "H.264" in combined -> "H.264"
+                "REMUX" in combined -> "REMUX"
+                else -> null
+            }
+        }
+
+    val detectedAudioBadge: String?
+        get() {
+            val combined = "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
+            return when {
+                "ATMOS" in combined -> "Dolby Atmos"
+                "TRUEHD" in combined -> "TrueHD 7.1"
+                "DTS-HD" in combined || "DTS:X" in combined -> "DTS-HD MA"
+                "DDP5.1" in combined || "DD+ 5.1" in combined || "EAC3" in combined -> "DD+ 5.1"
+                "5.1" in combined -> "5.1 Audio"
+                "AAC" in combined -> "AAC"
+                else -> null
+            }
+        }
+
+    val detectedFileSizeLabel: String?
+        get() {
+            val bytes = behaviorHints?.videoSize
+            if (bytes != null && bytes > 0L) {
+                val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+                return if (gb >= 1.0) {
+                    val rounded = (gb * 100.0).roundToInt() / 100.0
+                    "$rounded GB"
+                } else {
+                    val mb = (bytes.toDouble() / (1024.0 * 1024.0)).roundToInt()
+                    "$mb MB"
+                }
+            }
+            val text = "${title.orEmpty()} ${description.orEmpty()}"
+            val sizeRegex = Regex("""💾?\s*(\d+(?:\.\d+)?\s*(?:GB|MB|GiB|MiB))""", RegexOption.IGNORE_CASE)
+            return sizeRegex.find(text)?.groupValues?.getOrNull(1)?.uppercase()
         }
 
     val parsedSeeders: Int?
@@ -171,6 +227,18 @@ data class MediaStream(
             val text = "${title.orEmpty()} ${description.orEmpty()}"
             val regex = Regex("""(?:👤|Seeds?:?\s*|S:\s*)(\d+)""", RegexOption.IGNORE_CASE)
             return regex.find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        }
+
+    val detectedSourceQuality: String?
+        get() {
+            val combined = "${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
+            return when {
+                "REMUX" in combined -> "BluRay REMUX"
+                "BLURAY" in combined || "BLU-RAY" in combined -> "BluRay"
+                "WEB-DL" in combined || "WEBDL" in combined -> "WEB-DL"
+                "WEBRIP" in combined -> "WEBRip"
+                else -> null
+            }
         }
 }
 
@@ -321,16 +389,39 @@ data class TrackerSyncConfig(
     val autoScrobbleEnabled: Boolean = true
 )
 
+enum class SidebarBehaviorMode(val label: String) {
+    AUTO_EXPAND_HOVER("Apple TV Auto-Hover (Compact 64dp → Expands to 168dp on Hover)"),
+    ALWAYS_COMPACT("Always Compact Icons (64dp)"),
+    ALWAYS_EXPANDED("Always Expanded (168dp)")
+}
+
+enum class PosterCardSizePreset(val label: String, val widthDp: Int) {
+    COMPACT("Compact (136dp)", 136),
+    STANDARD("Netflix Standard (156dp)", 156),
+    LARGE("Cinema Large (184dp)", 184)
+}
+
 @Serializable
 data class LayoutCustomizationConfig(
+    val sidebarMode: SidebarBehaviorMode = SidebarBehaviorMode.AUTO_EXPAND_HOVER,
+    val posterSizePreset: PosterCardSizePreset = PosterCardSizePreset.STANDARD,
+    val showPosterTitlesBelow: Boolean = false, // False by default = Pure Netflix Poster Artwork Only!
+    val showRatingBadgeOnPoster: Boolean = false, // False by default = Clean un-cluttered Netflix Poster!
+    val posterCornerRadiusDp: Int = 10,
     val showHeroShowcase: Boolean = true,
-    val showCatalogTypeInHeader: Boolean = true,
-    val hideUnreleasedContent: Boolean = false,
+    val showCatalogTypeInHeader: Boolean = false,
     val showContinueWatchingRow: Boolean = true,
-    val posterCornerRadiusDp: Int = 14,
-    val sidebarAlwaysExpanded: Boolean = true,
-    val showAggregatedRatingsOnDetail: Boolean = true,
-    val autoPlayInAppTrailersOnDetail: Boolean = false
+    // Individual Rating Source Toggles (Only IMDb ON by default — user can toggle Rotten Tomatoes, Metacritic, Trakt, MDBList in Settings!)
+    val showImdbRating: Boolean = true,
+    val showRottenTomatoesCritics: Boolean = false,
+    val showRottenTomatoesAudience: Boolean = false,
+    val showMetacriticRating: Boolean = false,
+    val showTraktRating: Boolean = false,
+    val showMdbListRating: Boolean = false,
+    // Stream Card Information Toggles
+    val showStreamFileSizeBadge: Boolean = true,
+    val showStreamSeedersBadge: Boolean = true,
+    val showStreamCodecAndAudioBadges: Boolean = true
 )
 
 @Serializable

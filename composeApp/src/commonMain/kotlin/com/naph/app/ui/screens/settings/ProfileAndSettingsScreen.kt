@@ -69,7 +69,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.naph.app.core.model.PosterCardSizePreset
 import com.naph.app.core.model.ServerType
+import com.naph.app.core.model.SidebarBehaviorMode
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.state.ProfileSettingsPage
 import com.naph.app.ui.theme.NaphColors
@@ -584,7 +586,147 @@ private fun LayoutCustomizationSubPage(appState: NaphAppState) {
     val config by appState.layoutConfig.collectAsState()
 
     SubPageContainer {
-        SettingsSectionCard(sectionTitle = "HOME SCREEN & DETAIL PAGE LAYOUT") {
+        // 1. SIDEBAR & NAVIGATION BEHAVIOR (Apple TV Auto-Hover vs Always Compact vs Always Expanded)
+        SettingsSectionCard(sectionTitle = "LEFT SIDEBAR NAVIGATION STYLE (APPLE TV HOVER)") {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(22.dp)
+            ) {
+                Text(
+                    text = "Choose how the left sidebar behaves on Desktop",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White
+                )
+                SidebarBehaviorMode.entries.forEach { mode ->
+                    val isSelected = config.sidebarMode == mode
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .border(
+                                width = if (isSelected) 1.5.dp else 1.dp,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { appState.updateLayoutConfig(config.copy(sidebarMode = mode)) }
+                            .padding(horizontal = 16.dp, vertical = 13.dp)
+                    ) {
+                        Text(mode.label, style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                        if (isSelected) {
+                            Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. NETFLIX POSTER CARD CUSTOMIZATION
+        SettingsSectionCard(sectionTitle = "POSTER CARD STYLE (CLEAN NETFLIX LOOK)") {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.padding(22.dp)
+            ) {
+                Text("Poster Card Width", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PosterCardSizePreset.entries.forEach { sizePreset ->
+                        FilterChip(
+                            selected = config.posterSizePreset == sizePreset,
+                            onClick = { appState.updateLayoutConfig(config.copy(posterSizePreset = sizePreset)) },
+                            label = { Text(sizePreset.label) }
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                SettingsToggleRow(
+                    title = "Show Title Text Below Poster Cards",
+                    subtitle = "Off by default for a pure Netflix poster artwork grid",
+                    checked = config.showPosterTitlesBelow,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showPosterTitlesBelow = it)) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                SettingsToggleRow(
+                    title = "Show IMDb Score Badge on Poster Corner",
+                    subtitle = "Off by default so posters remain 100% clean without text overlays",
+                    checked = config.showRatingBadgeOnPoster,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showRatingBadgeOnPoster = it)) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                Column {
+                    Text(
+                        text = "Poster Corner Roundness: ${config.posterCornerRadiusDp} dp",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                    Slider(
+                        value = config.posterCornerRadiusDp.toFloat(),
+                        onValueChange = { appState.updateLayoutConfig(config.copy(posterCornerRadiusDp = it.toInt())) },
+                        valueRange = 4f..22f
+                    )
+                }
+            }
+        }
+
+        // 3. OPTIONAL RATING PROVIDERS (User Chooses Which Ratings to Display!)
+        SettingsSectionCard(sectionTitle = "RATING PROVIDERS ON MOVIE / SERIES DETAILS") {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.padding(22.dp)
+            ) {
+                SettingsToggleRow(
+                    title = "IMDb Rating",
+                    subtitle = "Show official IMDb star score on detail pages",
+                    checked = config.showImdbRating,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showImdbRating = it)) }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SettingsToggleRow(
+                    title = "Rotten Tomatoes (Critics Tomatometer 🍅)",
+                    subtitle = "Optional: Enable Rotten Tomatoes critics percentage",
+                    checked = config.showRottenTomatoesCritics,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showRottenTomatoesCritics = it)) }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SettingsToggleRow(
+                    title = "Rotten Tomatoes (Audience Popcornmeter 🍿)",
+                    subtitle = "Optional: Enable Rotten Tomatoes audience score",
+                    checked = config.showRottenTomatoesAudience,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showRottenTomatoesAudience = it)) }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SettingsToggleRow(
+                    title = "Metacritic Score",
+                    subtitle = "Optional: Enable Metacritic Metascore badge",
+                    checked = config.showMetacriticRating,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showMetacriticRating = it)) }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SettingsToggleRow(
+                    title = "Trakt.tv Community Score",
+                    subtitle = "Optional: Enable Trakt percentage badge",
+                    checked = config.showTraktRating,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showTraktRating = it)) }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SettingsToggleRow(
+                    title = "MDBList Aggregated Score",
+                    subtitle = "Optional: Enable MDBList combined score badge",
+                    checked = config.showMdbListRating,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showMdbListRating = it)) }
+                )
+            }
+        }
+
+        // 4. STREAM LIST & HOME SCREEN OPTIONS
+        SettingsSectionCard(sectionTitle = "HOME SCREEN & STREAM LIST DETAILS") {
             Column(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 modifier = Modifier.padding(22.dp)
@@ -597,31 +739,24 @@ private fun LayoutCustomizationSubPage(appState: NaphAppState) {
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 SettingsToggleRow(
-                    title = "Show Media Type in Catalog Row Titles",
-                    subtitle = "Append '— Movie' or '— Series' to addon catalog headers",
-                    checked = config.showCatalogTypeInHeader,
-                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showCatalogTypeInHeader = it)) }
+                    title = "Show File Size (MB / GB) on Stream Cards",
+                    subtitle = "Display exact stream file size badge (e.g. 4.2 GB, 18.4 GB)",
+                    checked = config.showStreamFileSizeBadge,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showStreamFileSizeBadge = it)) }
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 SettingsToggleRow(
-                    title = "Show Continue Watching Row on Home",
-                    subtitle = "Display in-progress movies and episodes at the top of Home",
-                    checked = config.showContinueWatchingRow,
-                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showContinueWatchingRow = it)) }
+                    title = "Show Active P2P Seeders Count on Stream Cards",
+                    subtitle = "Display BitTorrent seeder count badge on P2P streams",
+                    checked = config.showStreamSeedersBadge,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showStreamSeedersBadge = it)) }
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 SettingsToggleRow(
-                    title = "Show Aggregated Ratings Bar on Detail Screen",
-                    subtitle = "Display IMDb, Rotten Tomatoes, Metacritic, Trakt & MDBList badges",
-                    checked = config.showAggregatedRatingsOnDetail,
-                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showAggregatedRatingsOnDetail = it)) }
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SettingsToggleRow(
-                    title = "Always Expand Left Navigation Sidebar",
-                    subtitle = "Keep tab labels visible next to icons on Desktop",
-                    checked = config.sidebarAlwaysExpanded,
-                    onCheckedChange = { appState.updateLayoutConfig(config.copy(sidebarAlwaysExpanded = it)) }
+                    title = "Show Video Codec & Audio Format Badges (HEVC, Atmos, BluRay)",
+                    subtitle = "Display technical badges parsed from addon stream metadata",
+                    checked = config.showStreamCodecAndAudioBadges,
+                    onCheckedChange = { appState.updateLayoutConfig(config.copy(showStreamCodecAndAudioBadges = it)) }
                 )
             }
         }

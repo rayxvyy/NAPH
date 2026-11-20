@@ -452,15 +452,21 @@ class NaphAppState {
                     _activePlayableUrl.value = directHttpUrl
                     showBanner("Resolved cached stream via ${debridRepo.activeProviderName(_debridConfig.value)}")
                 }.onFailure {
-                    p2pEngine.startSequentialStream(stream, _p2pSettings.value) { localUrl ->
-                        _activePlayableUrl.value = localUrl
-                    }
+                    p2pEngine.startSequentialStream(
+                        stream = stream,
+                        settings = _p2pSettings.value,
+                        onStreamReady = { localUrl -> _activePlayableUrl.value = localUrl },
+                        onError = { err -> showBanner(err) }
+                    )
                 }
             }
         } else if (stream.isP2PTorrent) {
-            p2pEngine.startSequentialStream(stream, _p2pSettings.value) { localUrl ->
-                _activePlayableUrl.value = localUrl
-            }
+            p2pEngine.startSequentialStream(
+                stream = stream,
+                settings = _p2pSettings.value,
+                onStreamReady = { localUrl -> _activePlayableUrl.value = localUrl },
+                onError = { err -> showBanner(err) }
+            )
         } else {
             _activePlayableUrl.value = stream.url
         }

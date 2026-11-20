@@ -33,6 +33,7 @@ kotlin {
         @OptIn(ExperimentalKotlinGradlePluginApi::class)
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
+            freeCompilerArgs.add("-Xskip-metadata-version-check")
         }
     }
 
@@ -89,6 +90,7 @@ kotlin {
             implementation(libs.libtorrent4j)
             implementation(libs.jna)
             implementation(libs.jna.platform)
+            implementation(files("libs/nuvio-engine-jvm-0.1.6.jar"))
         }
 
         iosMain.dependencies {
@@ -127,6 +129,13 @@ android {
 compose.desktop {
     application {
         mainClass = "com.naph.app.MainKt"
+        jvmArgs += listOf(
+            "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
+            "--add-opens=java.desktop/java.awt.event=ALL-UNNAMED",
+            "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
+            "--add-opens=java.desktop/sun.awt.windows=ALL-UNNAMED",
+            "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED"
+        )
 
         nativeDistributions {
             targetFormats(
