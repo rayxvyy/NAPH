@@ -28,12 +28,8 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -52,11 +48,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
 import com.naph.app.core.model.LayoutCustomizationConfig
 import com.naph.app.core.model.MediaItem
 import com.naph.app.ui.components.CinemaPosterCard
 import com.naph.app.ui.components.ContinueWatchingCard
+import com.naph.app.ui.components.FastNetworkImage
+import com.naph.app.ui.components.ModernGlassButton
+import com.naph.app.ui.components.ModernPrimaryButton
+import com.naph.app.ui.components.NaphBrandIcon
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.state.ProfileSettingsPage
 import com.naph.app.ui.theme.NaphColors
@@ -101,71 +100,48 @@ fun HomeScreen(
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
                 modifier = Modifier
-                    .width(560.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(22.dp))
-                    .padding(36.dp)
+                    .width(520.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xFF10131C))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
+                    .padding(32.dp)
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Extension,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(34.dp)
-                    )
-                }
+                NaphBrandIcon(size = 54.dp)
 
                 Text(
                     text = "Welcome to NAPH",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = Color.White
+                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 24.sp),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
                 )
 
                 Text(
                     text = "NAPH starts clean with zero pre-installed addons. Add your favorite community addons in Profile → Content & Discovery → Installed Addons to populate your Home screen.",
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
                     color = NaphColors.TextSecondary
                 )
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Button(
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ModernPrimaryButton(
+                        text = "Add Your First Addon",
+                        icon = Icons.Default.Add,
                         onClick = {
                             appState.navigateSettingsPage(ProfileSettingsPage.ADDONS_MANAGER)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 14.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Add Your First Addon", fontWeight = FontWeight.Bold)
-                    }
+                        }
+                    )
 
-                    OutlinedButton(
+                    ModernGlassButton(
+                        text = "Connect Jellyfin / Emby",
+                        icon = Icons.Default.Dns,
+                        iconTint = NaphColors.CyanGlow,
                         onClick = {
                             appState.navigateSettingsPage(ProfileSettingsPage.MEDIA_SERVERS)
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
-                    ) {
-                        Icon(Icons.Default.Dns, contentDescription = null, tint = NaphColors.CyanGlow)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Connect Jellyfin / Emby", color = Color.White)
-                    }
+                        }
+                    )
                 }
             }
         }
@@ -173,15 +149,15 @@ fun HomeScreen(
     }
 
     LazyColumn(
-        contentPadding = PaddingValues(bottom = 84.dp),
-        verticalArrangement = Arrangement.spacedBy(26.dp),
+        contentPadding = PaddingValues(bottom = 72.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
         if (layoutConfig.showHeroShowcase && heroItems.isNotEmpty()) {
             val activeHero = heroItems[heroIndex % heroItems.size]
-            item {
+            item(key = "hero_showcase", contentType = "hero") {
                 HeroShowcaseStage(
                     item = activeHero,
                     totalSlides = heroItems.size,
@@ -200,25 +176,25 @@ fun HomeScreen(
         }
 
         if (isLoadingCatalogs) {
-            item {
+            item(key = "loading_indicator", contentType = "status") {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 28.dp, vertical = 18.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(20.dp)
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF10131C))
+                        .padding(16.dp)
                 ) {
                     CircularProgressIndicator(
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.5.dp
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
                     )
                     Text(
-                        text = "Loading catalogs & artwork from your installed addons...",
-                        style = MaterialTheme.typography.titleMedium,
+                        text = "Loading catalogs from installed addons...",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = Color.White
                     )
                 }
@@ -226,15 +202,15 @@ fun HomeScreen(
         }
 
         if (layoutConfig.showContinueWatchingRow && continueWatching.isNotEmpty()) {
-            item {
+            item(key = "continue_watching", contentType = "continue_row") {
                 Column {
                     SectionHeader(title = "Continue Watching")
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                     LazyRow(
-                        contentPadding = PaddingValues(horizontal = 28.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        contentPadding = PaddingValues(horizontal = 24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        items(continueWatching, key = { it.mediaId }) { entry ->
+                        items(continueWatching, key = { it.mediaId }, contentType = { "cw_card" }) { entry ->
                             ContinueWatchingCard(
                                 entry = entry,
                                 onClick = {
@@ -252,7 +228,7 @@ fun HomeScreen(
         }
 
         if (personalItems.isNotEmpty()) {
-            item {
+            item(key = "personal_server_row", contentType = "catalog_row") {
                 CatalogRowSection(
                     title = "Personal Media Server",
                     items = personalItems,
@@ -262,8 +238,12 @@ fun HomeScreen(
             }
         }
 
-        // Dynamic Catalog Rows from User-Installed Addons (Clean Netflix Section Headers!)
-        items(homeCatalogSections, key = { it.key }) { section ->
+        // Dynamic Catalog Rows from User-Installed Addons (Virtualized & Reusable ContentType)
+        items(
+            items = homeCatalogSections,
+            key = { it.key },
+            contentType = { "catalog_row" }
+        ) { section ->
             CatalogRowSection(
                 title = section.title,
                 items = section.items,
@@ -273,48 +253,45 @@ fun HomeScreen(
         }
 
         if (!isLoadingCatalogs && installedAddons.isNotEmpty() && homeCatalogSections.isEmpty() && personalItems.isEmpty()) {
-            item {
+            item(key = "stream_only_notice", contentType = "notice") {
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 28.dp, vertical = 24.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
-                        .padding(24.dp)
+                        .padding(horizontal = 24.dp, vertical = 16.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFF10131C))
+                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                        .padding(20.dp)
                 ) {
                     Text(
                         text = "Your installed addon (${installedAddons.joinToString { it.name }}) provides streams/subtitles only",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         color = Color.White
                     )
                     Text(
-                        text = "To see movie, series, or anime catalog rows on the Home screen, install a catalog addon in Profile → Content & Discovery → Installed Addons (e.g. Cinemeta, CyberFlix, or TMDB).",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Install a catalog addon in Profile → Content & Discovery → Installed Addons (e.g. Cinemeta, CyberFlix, or TMDB) to populate movie and series rows.",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
                         color = NaphColors.TextSecondary
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ADDONS_MANAGER) },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Icon(Icons.Default.Extension, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Manage Addons", color = Color.White)
-                        }
-                        OutlinedButton(onClick = { appState.refreshLiveCatalogs() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Refresh Catalogs", color = Color.White)
-                        }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        ModernPrimaryButton(
+                            text = "Manage Addons",
+                            icon = Icons.Default.Extension,
+                            onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ADDONS_MANAGER) }
+                        )
+                        ModernGlassButton(
+                            text = "Refresh Catalogs",
+                            icon = Icons.Default.Refresh,
+                            onClick = { appState.refreshLiveCatalogs() }
+                        )
                     }
                 }
             }
         }
 
         if (profileWatchlist.isNotEmpty()) {
-            item {
+            item(key = "my_list_row", contentType = "catalog_row") {
                 CatalogRowSection(
                     title = "My List",
                     items = profileWatchlist,
@@ -342,12 +319,14 @@ private fun HeroShowcaseStage(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(450.dp)
+            .height(410.dp)
             .background(MaterialTheme.colorScheme.surface)
     ) {
-        AsyncImage(
-            model = item.background ?: item.poster,
+        FastNetworkImage(
+            url = item.background ?: item.poster,
             contentDescription = item.name,
+            widthPx = 960,
+            heightPx = 540,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
@@ -384,10 +363,10 @@ private fun HeroShowcaseStage(
             verticalArrangement = Arrangement.Bottom,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 32.dp, vertical = 28.dp)
+                .padding(horizontal = 28.dp, vertical = 24.dp)
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 HeroSpecChip(item.type.uppercase(), MaterialTheme.colorScheme.primary)
@@ -398,28 +377,29 @@ private fun HeroShowcaseStage(
                 item.genres.take(2).forEach { g -> HeroSpecChip(g, NaphColors.TextSecondary) }
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
 
             Text(
                 text = item.name,
-                style = MaterialTheme.typography.displayLarge,
+                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 30.sp),
                 color = Color.White,
+                fontWeight = FontWeight.Bold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
 
             if (!item.description.isNullOrBlank()) {
                 Text(
                     text = item.description,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White.copy(alpha = 0.90f),
-                    maxLines = 3,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                    color = Color.White.copy(alpha = 0.88f),
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(0.62f)
+                    modifier = Modifier.fillMaxWidth(0.58f)
                 )
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(14.dp))
             }
 
             Row(
@@ -427,62 +407,44 @@ private fun HeroShowcaseStage(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(
-                        onClick = onPlayNow,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color.Black
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Play", fontWeight = FontWeight.ExtraBold)
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ModernPrimaryButton(
+                        text = "Play",
+                        icon = Icons.Default.PlayArrow,
+                        containerColor = Color.White,
+                        contentColor = Color.Black,
+                        onClick = onPlayNow
+                    )
 
                     if (item.trailers.isNotEmpty() || item.trailerStreams.isNotEmpty()) {
-                        OutlinedButton(
-                            onClick = onWatchTrailer,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp)
-                        ) {
-                            Icon(Icons.Default.Movie, contentDescription = null, tint = NaphColors.CyanGlow)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Trailer", color = Color.White, fontWeight = FontWeight.SemiBold)
-                        }
+                        ModernGlassButton(
+                            text = "Trailer",
+                            icon = Icons.Default.Movie,
+                            iconTint = NaphColors.CyanGlow,
+                            onClick = onWatchTrailer
+                        )
                     }
 
-                    OutlinedButton(
-                        onClick = onToggleWatchlist,
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isInWatchlist) Icons.Default.Check else Icons.Default.Add,
-                            contentDescription = null,
-                            tint = if (isInWatchlist) NaphColors.EmeraldSeed else Color.White
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = if (isInWatchlist) "My List" else "+ My List",
-                            color = Color.White
-                        )
-                    }
+                    ModernGlassButton(
+                        text = if (isInWatchlist) "In List" else "+ My List",
+                        icon = if (isInWatchlist) Icons.Default.Check else Icons.Default.Add,
+                        iconTint = if (isInWatchlist) NaphColors.EmeraldSeed else Color.White,
+                        isActive = isInWatchlist,
+                        onClick = onToggleWatchlist
+                    )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     repeat(totalSlides) { idx ->
                         val isSelected = idx == activeIndex
                         Box(
                             modifier = Modifier
-                                .height(7.dp)
-                                .width(if (isSelected) 24.dp else 7.dp)
+                                .height(6.dp)
+                                .width(if (isSelected) 20.dp else 6.dp)
                                 .clip(CircleShape)
                                 .background(
                                     if (isSelected) Color.White
-                                    else Color.White.copy(alpha = 0.35f)
+                                    else Color.White.copy(alpha = 0.30f)
                                 )
                                 .clickable { onSelectSlide(idx) }
                         )
@@ -497,10 +459,10 @@ private fun HeroShowcaseStage(
 private fun HeroSpecChip(text: String, color: Color) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(5.dp))
             .background(Color(0xB30E1017))
-            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .border(1.dp, color.copy(alpha = 0.40f), RoundedCornerShape(5.dp))
+            .padding(horizontal = 7.dp, vertical = 2.dp)
     ) {
         Text(
             text = text,
@@ -519,12 +481,16 @@ private fun CatalogRowSection(
 ) {
     Column {
         SectionHeader(title = title)
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 28.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            contentPadding = PaddingValues(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(items, key = { "${it.type}:${it.id}" }) { item ->
+            items(
+                items = items,
+                key = { "${it.type}:${it.id}" },
+                contentType = { "poster_card" }
+            ) { item ->
                 CinemaPosterCard(
                     item = item,
                     layoutConfig = layoutConfig,
@@ -539,8 +505,11 @@ private fun CatalogRowSection(
 private fun SectionHeader(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+        style = MaterialTheme.typography.titleMedium.copy(
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        ),
         color = Color.White,
-        modifier = Modifier.padding(horizontal = 28.dp)
+        modifier = Modifier.padding(horizontal = 24.dp)
     )
 }

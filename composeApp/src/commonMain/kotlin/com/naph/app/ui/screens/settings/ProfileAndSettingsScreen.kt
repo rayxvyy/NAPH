@@ -72,6 +72,10 @@ import androidx.compose.ui.unit.sp
 import com.naph.app.core.model.PosterCardSizePreset
 import com.naph.app.core.model.ServerType
 import com.naph.app.core.model.SidebarBehaviorMode
+import com.naph.app.ui.components.ModernFilterPill
+import com.naph.app.ui.components.ModernGlassButton
+import com.naph.app.ui.components.ModernIconPill
+import com.naph.app.ui.components.ModernPrimaryButton
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.state.ProfileSettingsPage
 import com.naph.app.ui.theme.NaphColors
@@ -155,15 +159,17 @@ fun ProfileAndSettingsScreen(
 @Composable
 private fun ProfileRootSectionsList(appState: NaphAppState) {
     val activeProfile by appState.activeProfile.collectAsState()
+    val profiles by appState.profiles.collectAsState()
     val isSignedIn by appState.syncRepo.isSignedIn.collectAsState()
     val accountEmail by appState.syncRepo.accountEmail.collectAsState()
+    val accountUsername by appState.syncRepo.accountUsername.collectAsState()
     val installedAddons by appState.installedAddons.collectAsState()
     val servers by appState.mediaServers.collectAsState()
     val selectedTheme by appState.selectedThemePreset.collectAsState()
 
     LazyColumn(
-        contentPadding = PaddingValues(horizontal = 32.dp, vertical = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(26.dp),
+        contentPadding = PaddingValues(horizontal = 28.dp, vertical = 22.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
         modifier = Modifier.fillMaxSize()
     ) {
         // Active Profile Header Banner
@@ -173,64 +179,70 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(18.dp))
-                    .padding(22.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF10131C))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                    .padding(18.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(Color(activeProfile.avatarColorHex).copy(alpha = 0.25f))
-                            .border(2.dp, Color(activeProfile.avatarColorHex), RoundedCornerShape(18.dp))
+                            .size(54.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(activeProfile.avatarColorHex).copy(alpha = 0.22f))
+                            .border(1.5.dp, Color(activeProfile.avatarColorHex), RoundedCornerShape(14.dp))
                     ) {
-                        Text(activeProfile.avatarEmoji, fontSize = 30.sp)
+                        Text(activeProfile.avatarEmoji, fontSize = 26.sp)
                     }
-                    Spacer(Modifier.width(18.dp))
+                    Spacer(Modifier.width(14.dp))
                     Column {
                         Text(
                             text = activeProfile.name,
-                            style = MaterialTheme.typography.headlineLarge,
+                            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 20.sp),
                             color = Color.White
                         )
                         Text(
-                            text = if (isSignedIn) "NAPH Cloud Sync Active (${accountEmail ?: "Synced"})"
-                            else "Local Profile • Sign in to sync across devices",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = NaphColors.EmeraldSeed
+                            text = if (isSignedIn) "Cloud Sync Active • ${accountUsername ?: accountEmail.orEmpty()}"
+                            else "Local Profile • Create an account or sign in to sync across devices",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                            color = if (isSignedIn) NaphColors.EmeraldSeed else NaphColors.TextSecondary
                         )
                     }
                 }
 
-                OutlinedButton(
-                    onClick = { appState.toggleProfilePicker(true) },
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.People, contentDescription = null, tint = Color.White)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Switch Profile", color = Color.White)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ModernGlassButton(
+                        text = "Switch / Add Profile (${profiles.size})",
+                        icon = Icons.Default.People,
+                        onClick = { appState.toggleProfilePicker(true) }
+                    )
+                    ModernGlassButton(
+                        text = "Delete Profile",
+                        icon = Icons.Default.Delete,
+                        iconTint = NaphColors.CrimsonPlay,
+                        textColor = NaphColors.CrimsonPlay,
+                        onClick = { appState.deleteProfile(activeProfile.id) }
+                    )
                 }
             }
         }
 
         // SECTION 1: ACCOUNT
         item {
-            SettingsSectionCard(sectionTitle = "ACCOUNT") {
+            SettingsSectionCard(sectionTitle = "ACCOUNT & PROFILES") {
                 SettingsRowItem(
                     icon = Icons.Default.People,
-                    title = "Switch Profile",
-                    subtitle = "Active: ${activeProfile.name} ${activeProfile.avatarEmoji} • Manage household profiles",
+                    title = "Manage & Delete Profiles",
+                    subtitle = "Active: ${activeProfile.name} ${activeProfile.avatarEmoji} (${profiles.size} total) • Switch, create, or delete profiles",
                     onClick = { appState.toggleProfilePicker(true) }
                 )
                 SettingsDivider()
                 SettingsRowItem(
                     icon = Icons.Default.Person,
-                    title = "Account & Cloud Sync",
-                    subtitle = if (isSignedIn) "Signed in as ${accountEmail ?: "NAPH User"} • Built-in cross-platform sync active"
-                    else "Sign in to sync your library, addons, and progress across Windows, Linux, iOS & Android",
+                    title = "Create Account / Sign In (NAPH Cloud)",
+                    subtitle = if (isSignedIn) "Signed in as ${accountUsername ?: accountEmail ?: "User"} • Cross-platform sync active"
+                    else "Create your own free NAPH account or sign in to sync addons & watch progress",
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ACCOUNT_DETAIL) }
                 )
                 SettingsDivider()
@@ -263,7 +275,7 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
                 SettingsRowItem(
                     icon = Icons.Default.GridView,
                     title = "Layout Customization",
-                    subtitle = "Customize Home screen hero banner, catalog titles, detail screen & poster cards",
+                    subtitle = "Customize sidebar hover mode, Netflix poster cards, optional ratings & stream badges",
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.LAYOUT_CUSTOMIZATION) }
                 )
                 SettingsDivider()
@@ -319,64 +331,211 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
 private fun AccountDetailSubPage(appState: NaphAppState) {
     val isSignedIn by appState.syncRepo.isSignedIn.collectAsState()
     val email by appState.syncRepo.accountEmail.collectAsState()
+    val username by appState.syncRepo.accountUsername.collectAsState()
     val syncStatus by appState.syncRepo.cloudSyncStatus.collectAsState()
-    var emailInput by remember { mutableStateOf(email.orEmpty()) }
+    val profiles by appState.profiles.collectAsState()
+    val activeProfile by appState.activeProfile.collectAsState()
+
+    var authMode by remember { mutableStateOf("CREATE") } // "CREATE" or "SIGNIN"
+    var usernameInput by remember { mutableStateOf("") }
+    var emailInput by remember { mutableStateOf("") }
     var passwordInput by remember { mutableStateOf("") }
+    var newProfName by remember { mutableStateOf("") }
+    var newProfEmoji by remember { mutableStateOf("🎬") }
 
     SubPageContainer {
-        SettingsSectionCard(sectionTitle = "BUILT-IN NAPH CLOUD SYNC") {
+        // 1. CREATE ACCOUNT / SIGN IN SECTION (Starts clean with no pre-filled personal email!)
+        SettingsSectionCard(sectionTitle = "NAPH CLOUD ACCOUNT (CREATE ACCOUNT OR SIGN IN)") {
             Column(
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.padding(22.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(20.dp)
             ) {
                 Text(
-                    text = if (isSignedIn) "Signed In & Syncing Across Devices" else "Sign In to NAPH Cloud",
-                    style = MaterialTheme.typography.titleLarge,
+                    text = if (isSignedIn) "Signed In as ${username ?: email}" else "Sync Your NAPH Account Across Devices",
+                    style = MaterialTheme.typography.titleMedium,
                     color = Color.White
                 )
                 Text(
                     text = syncStatus,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = NaphColors.EmeraldSeed
-                )
-                Text(
-                    text = "NAPH Cloud Sync is built directly into the app—no external server URLs, Docker containers, or manual API keys needed. Your profiles, installed addons, watch progress, and library sync automatically across Windows, Linux, iOS, and Android.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = NaphColors.TextSecondary
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
+                    color = if (isSignedIn) NaphColors.EmeraldSeed else NaphColors.CyanGlow
                 )
 
                 if (isSignedIn) {
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedButton(
-                        onClick = { appState.syncRepo.signOutNaphAccount() },
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Sign Out of NAPH Cloud", color = NaphColors.CrimsonPlay)
-                    }
+                    Spacer(Modifier.height(4.dp))
+                    ModernGlassButton(
+                        text = "Sign Out",
+                        textColor = NaphColors.CrimsonPlay,
+                        onClick = {
+                            appState.syncRepo.signOutNaphAccount()
+                            appState.showBanner("Signed out of NAPH Cloud")
+                        }
+                    )
                 } else {
+                    // Mode Switcher: Create New Account vs Sign In
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ModernFilterPill(
+                            label = "Create Account",
+                            selected = authMode == "CREATE",
+                            onClick = { authMode = "CREATE" }
+                        )
+                        ModernFilterPill(
+                            label = "Sign In",
+                            selected = authMode == "SIGNIN",
+                            onClick = { authMode = "SIGNIN" }
+                        )
+                    }
+
+                    if (authMode == "CREATE") {
+                        OutlinedTextField(
+                            value = usernameInput,
+                            onValueChange = { usernameInput = it },
+                            label = { Text("Choose a Username") },
+                            placeholder = { Text("e.g. alex") },
+                            singleLine = true,
+                            colors = naphTextFieldColors(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
                     OutlinedTextField(
                         value = emailInput,
                         onValueChange = { emailInput = it },
                         label = { Text("Email Address") },
+                        placeholder = { Text("you@example.com") },
                         singleLine = true,
                         colors = naphTextFieldColors(),
                         modifier = Modifier.fillMaxWidth()
                     )
+
                     OutlinedTextField(
                         value = passwordInput,
                         onValueChange = { passwordInput = it },
-                        label = { Text("Password") },
+                        label = { Text(if (authMode == "CREATE") "Create Password (min 6 chars)" else "Password") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         colors = naphTextFieldColors(),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Button(
-                        onClick = { appState.syncRepo.signInWithNaphAccount(emailInput) },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Text("Sign In & Sync Devices", color = Color.White, fontWeight = FontWeight.Bold)
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (authMode == "CREATE") {
+                            ModernPrimaryButton(
+                                text = "Create Account & Enable Sync",
+                                icon = Icons.Default.Add,
+                                onClick = {
+                                    val res = appState.syncRepo.createNaphAccount(usernameInput, emailInput, passwordInput)
+                                    res.onSuccess { user ->
+                                        appState.showBanner("Created NAPH Cloud account for $user")
+                                    }.onFailure { err ->
+                                        appState.showBanner(err.message ?: "Could not create account")
+                                    }
+                                }
+                            )
+                        } else {
+                            ModernPrimaryButton(
+                                text = "Sign In & Sync Devices",
+                                icon = Icons.Default.Check,
+                                onClick = {
+                                    val res = appState.syncRepo.signInWithNaphAccount(emailInput, passwordInput)
+                                    res.onSuccess { user ->
+                                        appState.showBanner("Signed in as $user")
+                                    }.onFailure { err ->
+                                        appState.showBanner(err.message ?: "Could not sign in")
+                                    }
+                                }
+                            )
+                        }
                     }
+                }
+            }
+        }
+
+        // 2. MANAGE, CREATE & DELETE HOUSEHOLD PROFILES
+        SettingsSectionCard(sectionTitle = "PROFILES (SWITCH, CREATE, OR DELETE ANY PROFILE)") {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(20.dp)
+            ) {
+                profiles.forEach { prof ->
+                    val isCurrent = prof.id == activeProfile.id
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF0E1118))
+                            .border(
+                                width = 1.dp,
+                                color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(prof.avatarEmoji, fontSize = 20.sp)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = prof.name + if (isCurrent) " (Active)" else "",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp),
+                                    color = Color.White
+                                )
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (!isCurrent) {
+                                ModernGlassButton(
+                                    text = "Switch",
+                                    height = 30.dp,
+                                    onClick = { appState.switchProfile(prof) }
+                                )
+                            }
+                            ModernGlassButton(
+                                text = "Delete",
+                                icon = Icons.Default.Delete,
+                                iconTint = NaphColors.CrimsonPlay,
+                                textColor = NaphColors.CrimsonPlay,
+                                height = 30.dp,
+                                onClick = { appState.deleteProfile(prof.id) }
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 4.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = newProfName,
+                        onValueChange = { newProfName = it },
+                        label = { Text("New Profile Name") },
+                        singleLine = true,
+                        colors = naphTextFieldColors(),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = newProfEmoji,
+                        onValueChange = { newProfEmoji = it },
+                        label = { Text("Emoji") },
+                        singleLine = true,
+                        colors = naphTextFieldColors(),
+                        modifier = Modifier.width(84.dp)
+                    )
+                    ModernPrimaryButton(
+                        text = "Add Profile",
+                        icon = Icons.Default.Add,
+                        onClick = {
+                            appState.addProfile(newProfName, newProfEmoji, false)
+                            newProfName = ""
+                        }
+                    )
                 }
             }
         }

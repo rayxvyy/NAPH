@@ -1,6 +1,7 @@
 package com.naph.app.core.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlin.math.roundToInt
 
 /**
@@ -139,107 +140,113 @@ data class MediaStream(
     val isDebridCached: Boolean = false,
     val debridProvider: String? = null
 ) {
+    companion object {
+        private val FILE_SIZE_REGEX = Regex("""💾?\s*(\d+(?:\.\d+)?\s*(?:GB|MB|GiB|MiB))""", RegexOption.IGNORE_CASE)
+        private val SEEDERS_REGEX = Regex("""(?:👤|Seeds?:?\s*|S:\s*)(\d+)""", RegexOption.IGNORE_CASE)
+    }
+
     val isP2PTorrent: Boolean
         get() = !infoHash.isNullOrBlank() && url.isNullOrBlank()
 
-    val cleanTitleLine: String
-        get() {
-            val raw = behaviorHints?.filename
-                ?: (title ?: description ?: "").lines().firstOrNull { it.isNotBlank() }
-                ?: name
-                ?: "Video Stream"
-            return raw.trim()
+    @Transient
+    private val combinedUpper: String by lazy(LazyThreadSafetyMode.NONE) {
+        "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
+    }
+
+    @Transient
+    val cleanTitleLine: String by lazy(LazyThreadSafetyMode.NONE) {
+        val raw = behaviorHints?.filename
+            ?: (title ?: description ?: "").lines().firstOrNull { it.isNotBlank() }
+            ?: name
+            ?: "Video Stream"
+        raw.trim()
+    }
+
+    @Transient
+    val displayDetails: String by lazy(LazyThreadSafetyMode.NONE) {
+        (title ?: description ?: (url ?: "P2P InfoHash: ${infoHash?.take(10)}...")).replace("\n", " • ").trim()
+    }
+
+    @Transient
+    val detectedResolution: String by lazy(LazyThreadSafetyMode.NONE) {
+        when {
+            "2160P" in combinedUpper || "4K" in combinedUpper || "UHD" in combinedUpper -> "4K UHD"
+            "1440P" in combinedUpper || "2K" in combinedUpper -> "1440p"
+            "1080P" in combinedUpper || "FHD" in combinedUpper -> "1080p"
+            "720P" in combinedUpper -> "720p"
+            "480P" in combinedUpper -> "480p"
+            else -> "HD"
         }
+    }
 
-    val displayDetails: String
-        get() = title ?: description ?: (url ?: "P2P InfoHash: ${infoHash?.take(10)}...")
-
-    val detectedResolution: String
-        get() {
-            val combined = "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
-            return when {
-                "2160P" in combined || "4K" in combined || "UHD" in combined -> "4K UHD"
-                "1440P" in combined || "2K" in combined -> "1440p"
-                "1080P" in combined || "FHD" in combined -> "1080p"
-                "720P" in combined -> "720p"
-                "480P" in combined -> "480p"
-                else -> "HD"
-            }
+    @Transient
+    val detectedHdrBadge: String? by lazy(LazyThreadSafetyMode.NONE) {
+        when {
+            "DV" in combinedUpper || "DOLBY VISION" in combinedUpper || "DOVI" in combinedUpper -> "Dolby Vision"
+            "HDR10+" in combinedUpper -> "HDR10+"
+            "HDR" in combinedUpper -> "HDR10"
+            else -> null
         }
+    }
 
-    val detectedHdrBadge: String?
-        get() {
-            val combined = "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
-            return when {
-                "DV" in combined || "DOLBY VISION" in combined || "DOVI" in combined -> "Dolby Vision"
-                "HDR10+" in combined -> "HDR10+"
-                "HDR" in combined -> "HDR10"
-                else -> null
-            }
+    @Transient
+    val detectedVideoCodec: String? by lazy(LazyThreadSafetyMode.NONE) {
+        when {
+            "HEVC" in combinedUpper || "X265" in combinedUpper || "H265" in combinedUpper || "H.265" in combinedUpper -> "HEVC"
+            "AV1" in combinedUpper -> "AV1"
+            "AVC" in combinedUpper || "X264" in combinedUpper || "H264" in combinedUpper || "H.264" in combinedUpper -> "H.264"
+            "REMUX" in combinedUpper -> "REMUX"
+            else -> null
         }
+    }
 
-    val detectedVideoCodec: String?
-        get() {
-            val combined = "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
-            return when {
-                "HEVC" in combined || "X265" in combined || "H265" in combined || "H.265" in combined -> "HEVC"
-                "AV1" in combined -> "AV1"
-                "AVC" in combined || "X264" in combined || "H264" in combined || "H.264" in combined -> "H.264"
-                "REMUX" in combined -> "REMUX"
-                else -> null
-            }
+    @Transient
+    val detectedAudioBadge: String? by lazy(LazyThreadSafetyMode.NONE) {
+        when {
+            "ATMOS" in combinedUpper -> "Atmos"
+            "TRUEHD" in combinedUpper -> "TrueHD 7.1"
+            "DTS-HD" in combinedUpper || "DTS:X" in combinedUpper -> "DTS-HD"
+            "DDP5.1" in combinedUpper || "DD+ 5.1" in combinedUpper || "EAC3" in combinedUpper -> "DD+ 5.1"
+            "5.1" in combinedUpper -> "5.1"
+            "AAC" in combinedUpper -> "AAC"
+            else -> null
         }
+    }
 
-    val detectedAudioBadge: String?
-        get() {
-            val combined = "${name.orEmpty()} ${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
-            return when {
-                "ATMOS" in combined -> "Dolby Atmos"
-                "TRUEHD" in combined -> "TrueHD 7.1"
-                "DTS-HD" in combined || "DTS:X" in combined -> "DTS-HD MA"
-                "DDP5.1" in combined || "DD+ 5.1" in combined || "EAC3" in combined -> "DD+ 5.1"
-                "5.1" in combined -> "5.1 Audio"
-                "AAC" in combined -> "AAC"
-                else -> null
+    @Transient
+    val detectedFileSizeLabel: String? by lazy(LazyThreadSafetyMode.NONE) {
+        val bytes = behaviorHints?.videoSize
+        if (bytes != null && bytes > 0L) {
+            val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+            if (gb >= 1.0) {
+                val rounded = (gb * 100.0).roundToInt() / 100.0
+                "$rounded GB"
+            } else {
+                val mb = (bytes.toDouble() / (1024.0 * 1024.0)).roundToInt()
+                "$mb MB"
             }
-        }
-
-    val detectedFileSizeLabel: String?
-        get() {
-            val bytes = behaviorHints?.videoSize
-            if (bytes != null && bytes > 0L) {
-                val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
-                return if (gb >= 1.0) {
-                    val rounded = (gb * 100.0).roundToInt() / 100.0
-                    "$rounded GB"
-                } else {
-                    val mb = (bytes.toDouble() / (1024.0 * 1024.0)).roundToInt()
-                    "$mb MB"
-                }
-            }
+        } else {
             val text = "${title.orEmpty()} ${description.orEmpty()}"
-            val sizeRegex = Regex("""💾?\s*(\d+(?:\.\d+)?\s*(?:GB|MB|GiB|MiB))""", RegexOption.IGNORE_CASE)
-            return sizeRegex.find(text)?.groupValues?.getOrNull(1)?.uppercase()
+            FILE_SIZE_REGEX.find(text)?.groupValues?.getOrNull(1)?.uppercase()
         }
+    }
 
-    val parsedSeeders: Int?
-        get() {
-            val text = "${title.orEmpty()} ${description.orEmpty()}"
-            val regex = Regex("""(?:👤|Seeds?:?\s*|S:\s*)(\d+)""", RegexOption.IGNORE_CASE)
-            return regex.find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
-        }
+    @Transient
+    val parsedSeeders: Int? by lazy(LazyThreadSafetyMode.NONE) {
+        val text = "${title.orEmpty()} ${description.orEmpty()}"
+        SEEDERS_REGEX.find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
+    }
 
-    val detectedSourceQuality: String?
-        get() {
-            val combined = "${title.orEmpty()} ${description.orEmpty()} ${behaviorHints?.filename.orEmpty()}".uppercase()
-            return when {
-                "REMUX" in combined -> "BluRay REMUX"
-                "BLURAY" in combined || "BLU-RAY" in combined -> "BluRay"
-                "WEB-DL" in combined || "WEBDL" in combined -> "WEB-DL"
-                "WEBRIP" in combined -> "WEBRip"
-                else -> null
-            }
+    @Transient
+    val detectedSourceQuality: String? by lazy(LazyThreadSafetyMode.NONE) {
+        when {
+            "REMUX" in combinedUpper -> "REMUX"
+            "BLURAY" in combinedUpper || "BLU-RAY" in combinedUpper -> "BluRay"
+            "WEB-DL" in combinedUpper || "WEBDL" in combinedUpper -> "WEB-DL"
+            "WEBRIP" in combinedUpper -> "WEBRip"
+            else -> null
         }
+    }
 }
 
 @Serializable
@@ -390,15 +397,15 @@ data class TrackerSyncConfig(
 )
 
 enum class SidebarBehaviorMode(val label: String) {
-    AUTO_EXPAND_HOVER("Apple TV Auto-Hover (Compact 64dp → Expands to 168dp on Hover)"),
+    AUTO_EXPAND_HOVER("Apple TV Auto-Hover (Compact 64dp → Expands to 164dp on Hover)"),
     ALWAYS_COMPACT("Always Compact Icons (64dp)"),
-    ALWAYS_EXPANDED("Always Expanded (168dp)")
+    ALWAYS_EXPANDED("Always Expanded (164dp)")
 }
 
 enum class PosterCardSizePreset(val label: String, val widthDp: Int) {
-    COMPACT("Compact (136dp)", 136),
-    STANDARD("Netflix Standard (156dp)", 156),
-    LARGE("Cinema Large (184dp)", 184)
+    COMPACT("Compact (134dp)", 134),
+    STANDARD("Netflix Standard (152dp)", 152),
+    LARGE("Cinema Large (178dp)", 178)
 }
 
 @Serializable

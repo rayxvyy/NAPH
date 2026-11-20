@@ -6,8 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,26 +18,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,12 +50,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
 import com.naph.app.core.model.EpisodeVideo
 import com.naph.app.core.model.LayoutCustomizationConfig
 import com.naph.app.core.model.MediaItem
 import com.naph.app.core.model.MediaStream
 import com.naph.app.ui.components.AggregatedRatingsBar
+import com.naph.app.ui.components.FastNetworkImage
+import com.naph.app.ui.components.ModernFilterPill
+import com.naph.app.ui.components.ModernGlassButton
+import com.naph.app.ui.components.ModernIconPill
+import com.naph.app.ui.components.ModernPrimaryButton
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.state.ProfileSettingsPage
 import com.naph.app.ui.theme.NaphColors
@@ -92,7 +88,7 @@ fun MediaDetailScreen(
     var selectedEpisode by remember(item.id, item.videos) {
         mutableStateOf(item.videos.firstOrNull())
     }
-    var resolutionFilter by remember { mutableStateOf("ALL") } // "ALL", "4K", "1080p", "720p"
+    var resolutionFilter by remember { mutableStateOf("ALL") }
 
     val filteredStreams = remember(streams, resolutionFilter) {
         when (resolutionFilter) {
@@ -106,23 +102,25 @@ fun MediaDetailScreen(
     val bg = MaterialTheme.colorScheme.background
 
     LazyColumn(
-        contentPadding = PaddingValues(bottom = 80.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        contentPadding = PaddingValues(bottom = 72.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = modifier
             .fillMaxSize()
             .background(bg)
     ) {
         // 1. Top Cinema Backdrop + In-App Trailer Stage
-        item {
+        item(key = "hero_header") {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(440.dp)
+                    .height(410.dp)
                     .background(MaterialTheme.colorScheme.surface)
             ) {
-                AsyncImage(
-                    model = item.background ?: item.poster,
+                FastNetworkImage(
+                    url = item.background ?: item.poster,
                     contentDescription = item.name,
+                    widthPx = 960,
+                    heightPx = 540,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -134,26 +132,20 @@ fun MediaDetailScreen(
                             Brush.verticalGradient(
                                 colors = listOf(
                                     Color(0x88070709),
-                                    Color(0x55070709),
+                                    Color(0x66070709),
                                     bg
                                 )
                             )
                         )
                 )
 
-                IconButton(
+                ModernIconPill(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
                     onClick = { appState.closeMediaDetail() },
-                    modifier = Modifier
-                        .padding(20.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xCC12141C))
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
+                    size = 36.dp,
+                    modifier = Modifier.padding(20.dp)
+                )
 
                 if (activeTrailerYtId != null) {
                     InAppYouTubeTrailerOverlay(
@@ -170,126 +162,110 @@ fun MediaDetailScreen(
                         verticalAlignment = Alignment.Bottom,
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 32.dp, vertical = 24.dp)
+                            .padding(horizontal = 28.dp, vertical = 22.dp)
                     ) {
-                        AsyncImage(
-                            model = item.poster,
+                        FastNetworkImage(
+                            url = item.poster,
                             contentDescription = item.name,
+                            widthPx = 280,
+                            heightPx = 420,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
-                                .width(150.dp)
-                                .height(225.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(12.dp))
+                                .width(138.dp)
+                                .height(207.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(10.dp))
                         )
 
-                        Spacer(Modifier.width(24.dp))
+                        Spacer(Modifier.width(22.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
                                     text = item.type.uppercase(),
-                                    style = MaterialTheme.typography.labelSmall,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 item.releaseInfo?.let {
-                                    Text("• $it", style = MaterialTheme.typography.labelSmall, color = NaphColors.TextSecondary)
+                                    Text("• $it", style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp), color = NaphColors.TextSecondary)
                                 }
                                 item.runtime?.let {
-                                    Text("• $it", style = MaterialTheme.typography.labelSmall, color = NaphColors.TextSecondary)
+                                    Text("• $it", style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp), color = NaphColors.TextSecondary)
                                 }
                                 if (item.genres.isNotEmpty()) {
                                     Text(
                                         text = "• " + item.genres.joinToString(", "),
-                                        style = MaterialTheme.typography.labelSmall,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                                         color = NaphColors.TextSecondary
                                     )
                                 }
                             }
 
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(6.dp))
 
                             Text(
                                 text = item.name,
-                                style = MaterialTheme.typography.displayLarge,
-                                color = Color.White
+                                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 28.sp),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
                             )
 
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(8.dp))
 
-                            // Shows ratings enabled by user in Layout Customization Settings!
                             item.aggregatedRatings?.let { ratings ->
                                 AggregatedRatingsBar(
                                     ratings = ratings,
                                     layoutConfig = layoutConfig
                                 )
-                                Spacer(Modifier.height(12.dp))
+                                Spacer(Modifier.height(10.dp))
                             }
 
                             if (!item.description.isNullOrBlank()) {
                                 Text(
                                     text = item.description,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = Color.White.copy(alpha = 0.90f),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                                    color = Color.White.copy(alpha = 0.88f),
                                     maxLines = 3,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Spacer(Modifier.height(16.dp))
+                                Spacer(Modifier.height(14.dp))
                             }
 
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                ModernPrimaryButton(
+                                    text = if (selectedEpisode != null) "Play S${selectedEpisode!!.season}:E${selectedEpisode!!.episode}" else "Play",
+                                    icon = Icons.Default.PlayArrow,
+                                    containerColor = Color.White,
+                                    contentColor = Color.Black,
                                     onClick = {
                                         val bestStream = streams.firstOrNull()
                                         if (bestStream != null) {
                                             appState.startPlayback(item, bestStream, selectedEpisode)
                                         } else {
-                                            appState.showBanner("Install a stream addon (e.g. Torrentio) in Profile → Content & Discovery to fetch streams")
+                                            appState.showBanner("Install a stream addon (e.g. Torrentio) in Profile → Content & Discovery")
                                         }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color.White,
-                                        contentColor = Color.Black
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 13.dp)
-                                ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = if (selectedEpisode != null) "Play S${selectedEpisode!!.season}:E${selectedEpisode!!.episode}" else "Play",
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
-                                }
+                                    }
+                                )
 
                                 val ytId = item.trailers.firstOrNull()?.source
                                     ?: item.trailerStreams.firstOrNull()?.ytId
                                 if (!ytId.isNullOrBlank()) {
-                                    OutlinedButton(
-                                        onClick = { appState.openInAppTrailer(ytId) },
-                                        shape = RoundedCornerShape(12.dp),
-                                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 13.dp)
-                                    ) {
-                                        Icon(Icons.Default.Movie, contentDescription = null, tint = NaphColors.CyanGlow)
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Trailer", color = Color.White, fontWeight = FontWeight.SemiBold)
-                                    }
+                                    ModernGlassButton(
+                                        text = "Trailer",
+                                        icon = Icons.Default.Movie,
+                                        iconTint = NaphColors.CyanGlow,
+                                        onClick = { appState.openInAppTrailer(ytId) }
+                                    )
                                 }
 
                                 val inList = appState.isInWatchlist(item.id)
-                                OutlinedButton(
-                                    onClick = { appState.toggleWatchlist(item) },
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 13.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (inList) Icons.Default.Check else Icons.Default.Add,
-                                        contentDescription = null,
-                                        tint = if (inList) NaphColors.EmeraldSeed else Color.White
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(if (inList) "In Library" else "+ Library", color = Color.White)
-                                }
+                                ModernGlassButton(
+                                    text = if (inList) "In Library" else "+ Library",
+                                    icon = if (inList) Icons.Default.Check else Icons.Default.Add,
+                                    iconTint = if (inList) NaphColors.EmeraldSeed else Color.White,
+                                    isActive = inList,
+                                    onClick = { appState.toggleWatchlist(item) }
+                                )
                             }
                         }
                     }
@@ -299,23 +275,23 @@ fun MediaDetailScreen(
 
         // 2. Cast & Director Bar
         if (item.cast.isNotEmpty() || item.director.isNotEmpty()) {
-            item {
+            item(key = "cast_bar") {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
-                    modifier = Modifier.padding(horizontal = 32.dp)
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 4.dp)
                 ) {
                     if (item.director.isNotEmpty()) {
                         Column {
-                            Text("DIRECTOR", style = MaterialTheme.typography.labelSmall, color = NaphColors.TextMuted)
-                            Spacer(Modifier.height(4.dp))
-                            Text(item.director.joinToString(", "), style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                            Text("DIRECTOR", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = NaphColors.TextMuted)
+                            Spacer(Modifier.height(2.dp))
+                            Text(item.director.joinToString(", "), style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp), color = Color.White)
                         }
                     }
                     if (item.cast.isNotEmpty()) {
                         Column {
-                            Text("CAST", style = MaterialTheme.typography.labelSmall, color = NaphColors.TextMuted)
-                            Spacer(Modifier.height(4.dp))
-                            Text(item.cast.joinToString(" • "), style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                            Text("CAST", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = NaphColors.TextMuted)
+                            Spacer(Modifier.height(2.dp))
+                            Text(item.cast.joinToString(" • "), style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp), color = Color.White)
                         }
                     }
                 }
@@ -324,30 +300,31 @@ fun MediaDetailScreen(
 
         // 3. Season & Episode Selector (if Series / Anime)
         if (item.videos.isNotEmpty()) {
-            item {
-                Column(modifier = Modifier.padding(horizontal = 32.dp)) {
+            item(key = "episodes_selector") {
+                val seasonEps = remember(item.videos, selectedSeason) {
+                    item.videos.filter { it.season == selectedSeason }
+                }
+                Column(modifier = Modifier.padding(horizontal = 28.dp, vertical = 4.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Episodes", style = MaterialTheme.typography.titleLarge, color = Color.White)
-                        Spacer(Modifier.width(8.dp))
+                        Text("Episodes", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                        Spacer(Modifier.width(6.dp))
                         seasons.forEach { seasonNum ->
-                            FilterChip(
+                            ModernFilterPill(
+                                label = "Season $seasonNum",
                                 selected = selectedSeason == seasonNum,
-                                onClick = { selectedSeason = seasonNum },
-                                label = { Text("Season $seasonNum") }
+                                onClick = { selectedSeason = seasonNum }
                             )
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        val seasonEps = item.videos.filter { it.season == selectedSeason }
+                    Spacer(Modifier.height(10.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(seasonEps, key = { it.id }) { ep ->
-                            val isSelected = selectedEpisode?.id == ep.id
                             EpisodeCard(
                                 episode = ep,
-                                isSelected = isSelected,
+                                isSelected = selectedEpisode?.id == ep.id,
                                 onClick = {
                                     selectedEpisode = ep
                                     appState.loadStreamsAndMetadataFor(item, ep)
@@ -359,251 +336,249 @@ fun MediaDetailScreen(
             }
         }
 
-        // 4. Available Streams Section (Hides Debrid / Server labels if user hasn't connected them!)
-        item {
-            Column(modifier = Modifier.padding(horizontal = 32.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column {
-                        Text(
-                            text = buildString {
-                                append("Available Streams (${filteredStreams.size})")
-                                if (hasDebridConnected) append(" • Debrid Connected")
-                                if (hasServersConnected) append(" • Media Server Connected")
-                            },
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White
-                        )
-                        Text(
-                            text = "Select a stream below to start playback",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = NaphColors.TextSecondary
-                        )
-                    }
-
-                    // Clean Resolution Filter Chips (No unconnected Debrid/Server clutter!)
-                    if (streams.isNotEmpty()) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(
-                                "ALL" to "All (${streams.size})",
-                                "4K" to "4K UHD",
-                                "1080p" to "1080p",
-                                "720p" to "720p"
-                            ).forEach { (key, label) ->
-                                FilterChip(
-                                    selected = resolutionFilter == key,
-                                    onClick = { resolutionFilter = key },
-                                    label = { Text(label) }
-                                )
-                            }
-                        }
-                    }
+        // 4. Available Streams Header + Filter Pills
+        item(key = "streams_header") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 28.dp, vertical = 6.dp)
+            ) {
+                Column {
+                    Text(
+                        text = buildString {
+                            append("Streams (${filteredStreams.size})")
+                            if (hasDebridConnected) append(" • Debrid")
+                            if (hasServersConnected) append(" • Server")
+                        },
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Select a stream to start playback",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                        color = NaphColors.TextSecondary
+                    )
                 }
 
-                Spacer(Modifier.height(14.dp))
-
-                if (isLoadingStreams) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(120.dp)
-                    ) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    }
-                } else if (streams.isEmpty()) {
-                    // Clean guidance if user only installed a catalog addon (e.g. Cinemeta) without a stream addon
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
-                            .padding(22.dp)
-                    ) {
-                        Text(
-                            text = "No Streams Found for '${item.name}'",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White
-                        )
-                        Text(
-                            text = "Make sure you have installed a stream provider addon (such as Torrentio or your preferred P2P/HTTP stream addon) in Profile → Content & Discovery → Installed Addons.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = NaphColors.TextSecondary
-                        )
-                        Button(
-                            onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ADDONS_MANAGER) },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Icon(Icons.Default.Extension, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Add Stream Addon", color = Color.White)
-                        }
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        filteredStreams.forEach { stream ->
-                            StreamRowCard(
-                                stream = stream,
-                                layoutConfig = layoutConfig,
-                                hasDebridConnected = hasDebridConnected,
-                                onClick = {
-                                    appState.startPlayback(item, stream, selectedEpisode)
-                                }
+                if (streams.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            "ALL" to "All (${streams.size})",
+                            "4K" to "4K UHD",
+                            "1080p" to "1080p",
+                            "720p" to "720p"
+                        ).forEach { (key, label) ->
+                            ModernFilterPill(
+                                label = label,
+                                selected = resolutionFilter == key,
+                                onClick = { resolutionFilter = key }
                             )
                         }
                     }
                 }
             }
         }
+
+        // 5. Lazy Stream Items (100% Lazy Virtualized Rows — Zero Scroll Lag Even With 200+ Streams!)
+        if (isLoadingStreams) {
+            item(key = "streams_loading") {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
+        } else if (streams.isEmpty()) {
+            item(key = "streams_empty") {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 28.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF10131C))
+                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                        .padding(18.dp)
+                ) {
+                    Text(
+                        text = "No Streams Found for '${item.name}'",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Add a stream provider addon (e.g. Torrentio) in Profile → Content & Discovery → Installed Addons.",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
+                        color = NaphColors.TextSecondary
+                    )
+                    ModernPrimaryButton(
+                        text = "Add Stream Addon",
+                        icon = Icons.Default.Extension,
+                        onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ADDONS_MANAGER) }
+                    )
+                }
+            }
+        } else {
+            itemsIndexed(
+                items = filteredStreams,
+                key = { idx, s -> "${s.addonName}:${s.infoHash ?: s.url ?: idx}:$idx" }
+            ) { _, stream ->
+                StreamRowCard(
+                    stream = stream,
+                    layoutConfig = layoutConfig,
+                    hasDebridConnected = hasDebridConnected,
+                    onClick = {
+                        appState.startPlayback(item, stream, selectedEpisode)
+                    },
+                    modifier = Modifier.padding(horizontal = 28.dp)
+                )
+            }
+        }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StreamRowCard(
     stream: MediaStream,
     layoutConfig: LayoutCustomizationConfig,
     hasDebridConnected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clip(RoundedCornerShape(11.dp))
+            .background(Color(0xFF10131C))
             .border(
                 width = 1.dp,
-                color = Color.White.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(14.dp)
+                color = Color.White.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(11.dp)
             )
             .clickable { onClick() }
-            .padding(horizontal = 18.dp, vertical = 14.dp)
+            .padding(horizontal = 14.dp, vertical = 11.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.weight(1f)
         ) {
-            // Left Resolution & HDR Badge Box
+            // Compact Left Resolution Pill
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .width(92.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
-                    .padding(vertical = 10.dp, horizontal = 6.dp)
+                    .width(74.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0A0C12))
+                    .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(8.dp))
+                    .padding(vertical = 7.dp, horizontal = 4.dp)
             ) {
                 Text(
                     text = stream.detectedResolution,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
                     color = if (stream.detectedResolution.contains("4K")) NaphColors.GoldRating else Color.White,
-                    fontWeight = FontWeight.ExtraBold
+                    fontWeight = FontWeight.Bold
                 )
                 stream.detectedHdrBadge?.let { hdr ->
-                    Spacer(Modifier.height(3.dp))
                     Text(
                         text = hdr,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.5.sp),
                         color = NaphColors.CyanGlow
                     )
                 }
             }
 
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(12.dp))
 
-            // Center Stream Metadata: File Size (MB/GB), Seeders, Video Codec, Audio Format, Source Quality & Filename
+            // Fast Single-Pass Metadata Column (No expensive FlowRow layout overhead!)
             Column(modifier = Modifier.weight(1f)) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 1. File Size Badge (MB / GB)
                     if (layoutConfig.showStreamFileSizeBadge) {
                         stream.detectedFileSizeLabel?.let { sizeLabel ->
                             StreamSpecBadge(
                                 text = "💾 $sizeLabel",
-                                bgColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                                bgColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
                                 textColor = Color.White
                             )
                         }
                     }
 
-                    // 2. P2P Seeders Badge
                     if (layoutConfig.showStreamSeedersBadge) {
                         stream.parsedSeeders?.let { seeds ->
                             StreamSpecBadge(
-                                text = "👤 $seeds Seeds",
-                                bgColor = NaphColors.EmeraldSeed.copy(alpha = 0.18f),
+                                text = "👤 $seeds",
+                                bgColor = NaphColors.EmeraldSeed.copy(alpha = 0.16f),
                                 textColor = NaphColors.EmeraldSeed
                             )
                         }
                     }
 
-                    // 3. Video Codec / Audio / Quality Badges
                     if (layoutConfig.showStreamCodecAndAudioBadges) {
-                        stream.detectedSourceQuality?.let { q ->
-                            StreamSpecBadge(
-                                text = q,
-                                bgColor = Color.White.copy(alpha = 0.10f),
-                                textColor = NaphColors.TextSecondary
-                            )
-                        }
                         stream.detectedVideoCodec?.let { codec ->
                             StreamSpecBadge(
                                 text = codec,
-                                bgColor = NaphColors.CyanGlow.copy(alpha = 0.16f),
+                                bgColor = NaphColors.CyanGlow.copy(alpha = 0.14f),
                                 textColor = NaphColors.CyanGlow
                             )
                         }
                         stream.detectedAudioBadge?.let { audio ->
                             StreamSpecBadge(
-                                text = "🔊 $audio",
-                                bgColor = NaphColors.GoldRating.copy(alpha = 0.16f),
+                                text = audio,
+                                bgColor = NaphColors.GoldRating.copy(alpha = 0.14f),
                                 textColor = NaphColors.GoldRating
+                            )
+                        }
+                        stream.detectedSourceQuality?.let { q ->
+                            StreamSpecBadge(
+                                text = q,
+                                bgColor = Color.White.copy(alpha = 0.08f),
+                                textColor = NaphColors.TextSecondary
                             )
                         }
                     }
 
-                    // 4. Only show Debrid badge if stream is actually Debrid or user connected Debrid
                     if (hasDebridConnected && stream.isDebridCached) {
                         StreamSpecBadge(
-                            text = "⚡ ${stream.debridProvider ?: "Debrid Instant"}",
-                            bgColor = NaphColors.EmeraldSeed.copy(alpha = 0.22f),
+                            text = "⚡ ${stream.debridProvider ?: "Debrid"}",
+                            bgColor = NaphColors.EmeraldSeed.copy(alpha = 0.20f),
                             textColor = NaphColors.EmeraldSeed
                         )
                     }
 
-                    // 5. Addon Name
                     StreamSpecBadge(
                         text = stream.addonName,
-                        bgColor = Color.White.copy(alpha = 0.07f),
+                        bgColor = Color.White.copy(alpha = 0.05f),
                         textColor = NaphColors.TextSecondary
                     )
                 }
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(5.dp))
 
                 Text(
                     text = stream.cleanTitleLine,
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp),
                     color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                val extraInfo = stream.displayDetails.replace("\n", " • ")
+                val extraInfo = stream.displayDetails
                 if (extraInfo != stream.cleanTitleLine) {
-                    Spacer(Modifier.height(2.dp))
                     Text(
                         text = extraInfo,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
                         color = NaphColors.TextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -612,24 +587,14 @@ private fun StreamRowCard(
             }
         }
 
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(12.dp))
 
-        Button(
-            onClick = onClick,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.White
-            ),
-            shape = RoundedCornerShape(10.dp),
-            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 11.dp)
-        ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = "Play",
-                fontWeight = FontWeight.Bold
-            )
-        }
+        ModernPrimaryButton(
+            text = "Play",
+            icon = Icons.Default.PlayArrow,
+            height = 32.dp,
+            onClick = onClick
+        )
     }
 }
 
@@ -641,15 +606,16 @@ private fun StreamSpecBadge(
 ) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(5.dp))
             .background(bgColor)
-            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
             color = textColor,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
         )
     }
 }
@@ -673,16 +639,16 @@ private fun InAppYouTubeTrailerOverlay(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xF2070709))
-            .padding(32.dp)
+            .padding(24.dp)
     ) {
         Column(
             verticalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(14.dp))
                 .background(MaterialTheme.colorScheme.surface)
-                .border(1.dp, NaphColors.CyanGlow.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
-                .padding(24.dp)
+                .border(1.dp, NaphColors.CyanGlow.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                .padding(18.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -690,21 +656,17 @@ private fun InAppYouTubeTrailerOverlay(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Movie, contentDescription = null, tint = NaphColors.CyanGlow)
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text(title, style = MaterialTheme.typography.titleLarge, color = Color.White)
-                        Text(
-                            text = "In-App Trailer • Video ID: $ytId",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = NaphColors.TextSecondary
-                        )
-                    }
+                    Icon(Icons.Default.Movie, contentDescription = null, tint = NaphColors.CyanGlow, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White)
                 }
 
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Default.Close, contentDescription = "Close Trailer", tint = Color.White)
-                }
+                ModernIconPill(
+                    icon = Icons.Default.Close,
+                    contentDescription = "Close Trailer",
+                    onClick = onClose,
+                    size = 30.dp
+                )
             }
 
             Box(
@@ -712,13 +674,15 @@ private fun InAppYouTubeTrailerOverlay(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(vertical = 16.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .padding(vertical = 12.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(Color.Black)
             ) {
-                AsyncImage(
-                    model = "https://img.youtube.com/vi/$ytId/maxresdefault.jpg",
+                FastNetworkImage(
+                    url = "https://img.youtube.com/vi/$ytId/maxresdefault.jpg",
                     contentDescription = title,
+                    widthPx = 640,
+                    heightPx = 360,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -729,19 +693,16 @@ private fun InAppYouTubeTrailerOverlay(
                 )
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "▶ PLAYING IN-APP TRAILER ($ytId)",
-                        style = MaterialTheme.typography.titleMedium,
+                        text = "▶ TRAILER ($ytId)",
+                        style = MaterialTheme.typography.labelLarge,
                         color = NaphColors.CyanGlow
                     )
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = onPlayFullMovie,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Play Full Stream", color = Color.White)
-                    }
+                    Spacer(Modifier.height(10.dp))
+                    ModernPrimaryButton(
+                        text = "Play Full Stream",
+                        icon = Icons.Default.PlayArrow,
+                        onClick = onPlayFullMovie
+                    )
                 }
             }
 
@@ -751,7 +712,7 @@ private fun InAppYouTubeTrailerOverlay(
                 trackColor = NaphColors.ElevatedBorder,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(5.dp)
+                    .height(3.dp)
             )
         }
     }
@@ -765,35 +726,35 @@ private fun EpisodeCard(
 ) {
     Column(
         modifier = Modifier
-            .width(250.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant)
+            .width(220.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color(0xFF10131C))
             .border(
-                width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(12.dp)
+                width = 1.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(10.dp)
             )
             .clickable { onClick() }
-            .padding(14.dp)
+            .padding(12.dp)
     ) {
         Text(
-            text = "S${episode.season} • EPISODE ${episode.episode}",
-            style = MaterialTheme.typography.labelSmall,
+            text = "S${episode.season} • EP ${episode.episode}",
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
             color = if (isSelected) NaphColors.CyanGlow else NaphColors.TextSecondary
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(3.dp))
         Text(
             text = episode.displayTitle,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp),
             color = Color.White,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
         if (!episode.overview.isNullOrBlank()) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = episode.overview,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
                 color = NaphColors.TextSecondary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis

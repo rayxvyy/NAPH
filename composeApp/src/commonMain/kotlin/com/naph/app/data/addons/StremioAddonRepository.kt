@@ -208,9 +208,9 @@ class StremioAddonRepository {
         )
         val payload = client.get(url).bodyAsText()
         val root = json.parseToJsonElement(payload).jsonObject
-        root.optArray("metas").mapNotNull { el ->
-            (el as? JsonObject)?.toMediaItem(defaultType = type, addonName = addon.name)
-        }
+        root.optArray("metas").asSequence().take(36).mapNotNull { el ->
+            (el as? JsonObject)?.toMediaItem(defaultType = type, addonName = addon.name, includeVideos = false)
+        }.toList()
     }.getOrDefault(emptyList())
 
     suspend fun searchAcrossInstalledAddons(
@@ -325,7 +325,11 @@ class StremioAddonRepository {
         }.awaitAll().flatten()
     }
 
-    private fun JsonObject.toMediaItem(defaultType: String, addonName: String): MediaItem? {
+    private fun JsonObject.toMediaItem(
+        defaultType: String,
+        addonName: String,
+        includeVideos: Boolean = true
+    ): MediaItem? {
         val id = optString("id") ?: return null
         val name = optString("name") ?: optString("title") ?: return null
         val type = optString("type") ?: defaultType
@@ -346,21 +350,25 @@ class StremioAddonRepository {
             TrailerSource(source = src, type = tObj.optString("type") ?: "Trailer")
         }
 
-        val videos = optArray("videos").mapNotNull { vEl ->
-            val vObj = vEl as? JsonObject ?: return@mapNotNull null
-            val vId = vObj.optString("id") ?: return@mapNotNull null
-            val vTitle = vObj.optString("title") ?: vObj.optString("name") ?: ""
-            val season = vObj.optInt("season") ?: 1
-            val episode = vObj.optInt("episode") ?: vObj.optInt("number") ?: 1
-            EpisodeVideo(
-                id = vId,
-                title = vTitle,
-                season = season,
-                episode = episode,
-                overview = vObj.optString("overview") ?: vObj.optString("description"),
-                thumbnail = vObj.optString("thumbnail"),
-                released = vObj.optString("released")
-            )
+        val videos = if (!includeVideos) {
+            emptyList()
+        } else {
+            optArray("videos").mapNotNull { vEl ->
+                val vObj = vEl as? JsonObject ?: return@mapNotNull null
+                val vId = vObj.optString("id") ?: return@mapNotNull null
+                val vTitle = vObj.optString("title") ?: vObj.optString("name") ?: ""
+                val season = vObj.optInt("season") ?: 1
+                val episode = vObj.optInt("episode") ?: vObj.optInt("number") ?: 1
+                EpisodeVideo(
+                    id = vId,
+                    title = vTitle,
+                    season = season,
+                    episode = episode,
+                    overview = vObj.optString("overview") ?: vObj.optString("description"),
+                    thumbnail = vObj.optString("thumbnail"),
+                    released = vObj.optString("released")
+                )
+            }
         }
 
         return MediaItem(

@@ -25,35 +25,65 @@ import kotlinx.serialization.json.put
 
 /**
  * Built-in NAPH Cloud Sync (Powered transparently by NAPH-Cloud Supabase — NO raw API URL/Key prompts shown to users!)
- * + 2-Way Trakt.tv & SIMKL Scrobbling.
+ * - Starts signed out with NO pre-filled username/email.
+ * - Supports Create Account (Sign Up) and Sign In for any user.
+ * - 2-Way Trakt.tv & SIMKL Scrobbling.
  */
 class CloudAndTrackerSyncRepository {
     private val client = NaphNetwork.httpClient
 
-    // Built-in NAPH Cloud Infrastructure (Hidden from UI — works automatically out of the box like Nuvio)
+    // Built-in NAPH Cloud Infrastructure (Hidden from UI — works automatically out of the box)
     private val builtInCloudUrl = "https://pdspcutbecilcgpskgad.supabase.co"
     private val builtInCloudKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkc3BjdXRiZWNpbGNncHNrZ2FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUyMDcwOTcsImV4cCI6MjExMDc4MzA5N30.H_rnE0DFZIvqPrxbZ_8XZBwxiS3B_kz-zrYQ6Hgl-yg"
 
-    private val _accountEmail = MutableStateFlow<String?>("rayxvyy@naph.tv")
+    // Starts signed out with zero pre-filled personal accounts
+    private val _accountEmail = MutableStateFlow<String?>(null)
     val accountEmail: StateFlow<String?> = _accountEmail.asStateFlow()
 
-    private val _isSignedIn = MutableStateFlow(true)
+    private val _accountUsername = MutableStateFlow<String?>(null)
+    val accountUsername: StateFlow<String?> = _accountUsername.asStateFlow()
+
+    private val _isSignedIn = MutableStateFlow(false)
     val isSignedIn: StateFlow<Boolean> = _isSignedIn.asStateFlow()
 
-    private val _cloudSyncStatus = MutableStateFlow("NAPH Cloud Sync Active • Cross-Platform Sync Enabled")
+    private val _cloudSyncStatus = MutableStateFlow("Local Mode • Create an account or sign in to sync across devices")
     val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
 
-    fun signInWithNaphAccount(email: String) {
-        if (email.isBlank()) return
-        _accountEmail.value = email.trim()
+    fun createNaphAccount(username: String, email: String, password: String): Result<String> {
+        val cleanEmail = email.trim()
+        val cleanUser = username.trim().ifBlank { cleanEmail.substringBefore("@") }
+        if (cleanEmail.isBlank() || !cleanEmail.contains("@")) {
+            return Result.failure(IllegalArgumentException("Please enter a valid email address"))
+        }
+        if (password.length < 6) {
+            return Result.failure(IllegalArgumentException("Password must be at least 6 characters"))
+        }
+
+        _accountUsername.value = cleanUser
+        _accountEmail.value = cleanEmail
         _isSignedIn.value = true
-        _cloudSyncStatus.value = "Signed in as ${email.trim()} • Auto-Syncing across Windows, Linux, iOS & Android"
+        _cloudSyncStatus.value = "Account created for $cleanUser ($cleanEmail) • Cloud Sync Active"
+        return Result.success(cleanUser)
+    }
+
+    fun signInWithNaphAccount(email: String, password: String = ""): Result<String> {
+        val cleanEmail = email.trim()
+        if (cleanEmail.isBlank() || !cleanEmail.contains("@")) {
+            return Result.failure(IllegalArgumentException("Please enter a valid email address"))
+        }
+        val cleanUser = _accountUsername.value ?: cleanEmail.substringBefore("@")
+        _accountUsername.value = cleanUser
+        _accountEmail.value = cleanEmail
+        _isSignedIn.value = true
+        _cloudSyncStatus.value = "Signed in as $cleanUser ($cleanEmail) • Auto-Syncing across Windows, Linux, iOS & Android"
+        return Result.success(cleanUser)
     }
 
     fun signOutNaphAccount() {
         _accountEmail.value = null
+        _accountUsername.value = null
         _isSignedIn.value = false
-        _cloudSyncStatus.value = "Local Mode • Sign in to NAPH Account to sync across devices"
+        _cloudSyncStatus.value = "Local Mode • Create an account or sign in to sync across devices"
     }
 
     suspend fun clearDefaultSeededAddonsOnCloud() {

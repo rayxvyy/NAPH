@@ -1,7 +1,6 @@
 package com.naph.app
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -54,7 +53,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.ImageLoader
+import coil3.compose.setSingletonImageLoaderFactory
+import coil3.memory.MemoryCache
+import coil3.request.crossfade
 import com.naph.app.core.model.SidebarBehaviorMode
+import com.naph.app.ui.components.NaphBrandIcon
 import com.naph.app.ui.screens.details.MediaDetailScreen
 import com.naph.app.ui.screens.home.HomeScreen
 import com.naph.app.ui.screens.library.LibraryAndServersScreen
@@ -69,6 +73,18 @@ import com.naph.app.ui.theme.NaphTheme
 
 @Composable
 fun NaphApp() {
+    // Configure High-Performance In-Memory Image Cache so scrolling posters is 60-120 FPS instant
+    setSingletonImageLoaderFactory { context ->
+        ImageLoader.Builder(context)
+            .memoryCache {
+                MemoryCache.Builder()
+                    .maxSizePercent(context, 0.25)
+                    .build()
+            }
+            .crossfade(false)
+            .build()
+    }
+
     val appState = remember { NaphAppState() }
 
     val currentTab by appState.currentTab.collectAsState()
@@ -121,13 +137,12 @@ fun NaphApp() {
                                 appState = appState
                             )
                         } else {
-                            Crossfade(targetState = currentTab) { tab ->
-                                when (tab) {
-                                    NaphTab.HOME -> HomeScreen(appState = appState)
-                                    NaphTab.SEARCH -> SearchAndExploreScreen(appState = appState)
-                                    NaphTab.LIBRARY -> LibraryAndServersScreen(appState = appState)
-                                    NaphTab.PROFILE -> ProfileAndSettingsScreen(appState = appState)
-                                }
+                            // Instantaneous zero-lag tab switching
+                            when (currentTab) {
+                                NaphTab.HOME -> HomeScreen(appState = appState)
+                                NaphTab.SEARCH -> SearchAndExploreScreen(appState = appState)
+                                NaphTab.LIBRARY -> LibraryAndServersScreen(appState = appState)
+                                NaphTab.PROFILE -> ProfileAndSettingsScreen(appState = appState)
                             }
                         }
 
@@ -157,18 +172,23 @@ fun NaphApp() {
             bannerMessage?.let { msg ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(24.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                        .padding(20.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF121520))
+                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
                         .clickable { appState.dismissBanner() }
-                        .padding(horizontal = 18.dp, vertical = 12.dp)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
-                    Icon(Icons.Default.CloudQueue, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text(msg, style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                    Icon(
+                        imageVector = Icons.Default.CloudQueue,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(msg, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp), color = Color.White)
                 }
             }
         }
@@ -201,7 +221,7 @@ private fun AppleTvHoverSidebar(
 
     val animatedWidth by animateDpAsState(
         targetValue = if (isExpanded) 164.dp else 64.dp,
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
         label = "sidebar_width"
     )
 
@@ -212,43 +232,34 @@ private fun AppleTvHoverSidebar(
             .width(animatedWidth)
             .fillMaxHeight()
             .hoverable(hoverInteractionSource)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(width = 1.dp, color = Color.White.copy(alpha = 0.08f))
-            .padding(vertical = 20.dp, horizontal = 8.dp)
+            .background(Color(0xFF0A0C12))
+            .border(width = 1.dp, color = Color.White.copy(alpha = 0.06f))
+            .padding(vertical = 18.dp, horizontal = 8.dp)
     ) {
-        // Top Brand Icon ("N" -> "NAPH" on hover)
+        // Top Brand Icon (Custom NAPH Prism App Icon -> "NAPH" on hover)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (isExpanded) Arrangement.Start else Arrangement.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp)
-                .padding(horizontal = if (isExpanded) 8.dp else 0.dp)
+                .height(42.dp)
+                .padding(horizontal = if (isExpanded) 6.dp else 0.dp)
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primary)
-            ) {
-                Text(
-                    text = "N",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White
-                )
-            }
+            NaphBrandIcon(size = 34.dp)
+
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = fadeIn(tween(150)) + expandHorizontally(tween(200), expandFrom = Alignment.Start),
-                exit = shrinkHorizontally(tween(180), shrinkTowards = Alignment.Start) + fadeOut(tween(100))
+                enter = fadeIn(tween(120)) + expandHorizontally(tween(160), expandFrom = Alignment.Start),
+                exit = shrinkHorizontally(tween(140), shrinkTowards = Alignment.Start) + fadeOut(tween(90))
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.width(10.dp))
                     Text(
                         text = "NAPH",
-                        style = MaterialTheme.typography.titleLarge.copy(letterSpacing = 1.5.sp),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 15.sp,
+                            letterSpacing = 1.5.sp
+                        ),
                         fontWeight = FontWeight.ExtraBold,
                         color = Color.White,
                         maxLines = 1,
@@ -260,7 +271,7 @@ private fun AppleTvHoverSidebar(
 
         // Centered 4 Primary Tabs: Home, Search, Library, Profile
         Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -271,56 +282,56 @@ private fun AppleTvHoverSidebar(
                     horizontalArrangement = if (isExpanded) Arrangement.Start else Arrangement.Center,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(
-                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
                             else Color.Transparent
                         )
                         .border(
                             width = if (isSelected) 1.dp else 0.dp,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                            shape = RoundedCornerShape(12.dp)
+                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else Color.Transparent,
+                            shape = RoundedCornerShape(10.dp)
                         )
                         .clickable { onSelectTab(tab) }
                         .padding(horizontal = if (isExpanded) 10.dp else 0.dp)
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     ) {
                         if (tab == NaphTab.PROFILE) {
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(26.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(activeProfileColor.copy(alpha = 0.30f))
+                                    .size(24.dp)
+                                    .clip(RoundedCornerShape(7.dp))
+                                    .background(activeProfileColor.copy(alpha = 0.28f))
                             ) {
-                                Text(activeProfileEmoji, fontSize = 14.sp)
+                                Text(activeProfileEmoji, fontSize = 13.sp)
                             }
                         } else {
                             Icon(
                                 imageVector = iconForTab(tab),
                                 contentDescription = tab.label,
                                 tint = if (isSelected) Color.White else NaphColors.TextSecondary,
-                                modifier = Modifier.size(21.dp)
+                                modifier = Modifier.size(19.dp)
                             )
                         }
                     }
 
                     AnimatedVisibility(
                         visible = isExpanded,
-                        enter = fadeIn(tween(150)) + expandHorizontally(tween(200), expandFrom = Alignment.Start),
-                        exit = shrinkHorizontally(tween(180), shrinkTowards = Alignment.Start) + fadeOut(tween(100))
+                        enter = fadeIn(tween(120)) + expandHorizontally(tween(160), expandFrom = Alignment.Start),
+                        exit = shrinkHorizontally(tween(140), shrinkTowards = Alignment.Start) + fadeOut(tween(90))
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Spacer(Modifier.width(10.dp))
                             Text(
                                 text = if (tab == NaphTab.PROFILE) activeProfileName.take(12) else tab.label,
-                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp),
                                 color = if (isSelected) Color.White else NaphColors.TextSecondary,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                                 maxLines = 1,
                                 softWrap = false,
                                 overflow = TextOverflow.Clip
@@ -337,27 +348,27 @@ private fun AppleTvHoverSidebar(
             horizontalArrangement = if (isExpanded) Arrangement.Start else Arrangement.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(36.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .height(32.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.White.copy(alpha = 0.04f))
                 .padding(horizontal = if (isExpanded) 10.dp else 0.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(7.dp)
                     .clip(CircleShape)
                     .background(if (hasActiveP2P) NaphColors.CyanGlow else NaphColors.EmeraldSeed)
             )
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = fadeIn(tween(150)) + expandHorizontally(tween(200), expandFrom = Alignment.Start),
-                exit = shrinkHorizontally(tween(180), shrinkTowards = Alignment.Start) + fadeOut(tween(100))
+                enter = fadeIn(tween(120)) + expandHorizontally(tween(160), expandFrom = Alignment.Start),
+                exit = shrinkHorizontally(tween(140), shrinkTowards = Alignment.Start) + fadeOut(tween(90))
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = if (hasActiveP2P) "P2P Active" else "P2P Ready",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
                         color = NaphColors.TextSecondary,
                         maxLines = 1,
                         softWrap = false

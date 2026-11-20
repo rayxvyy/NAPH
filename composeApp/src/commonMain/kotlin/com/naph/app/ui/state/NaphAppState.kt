@@ -110,12 +110,10 @@ class NaphAppState {
     private val _activeTrailerYtId = MutableStateFlow<String?>(null)
     val activeTrailerYtId: StateFlow<String?> = _activeTrailerYtId.asStateFlow()
 
-    // Profiles
+    // Profiles (Starts with 1 clean profile; users can create, edit, or delete any profile!)
     private val _profiles = MutableStateFlow(
         listOf(
-            UserProfile(id = "prof_main", name = "Main Profile", avatarColorHex = 0xFF3B82F6, avatarEmoji = "🎬"),
-            UserProfile(id = "prof_anime", name = "Anime & 4K", avatarColorHex = 0xFF10B981, avatarEmoji = "⚡"),
-            UserProfile(id = "prof_family", name = "Family Room", avatarColorHex = 0xFFF59E0B, avatarEmoji = "🍿")
+            UserProfile(id = "prof_main", name = "My Profile", avatarColorHex = 0xFF3B82F6, avatarEmoji = "🎬")
         )
     )
     val profiles: StateFlow<List<UserProfile>> = _profiles.asStateFlow()
@@ -258,8 +256,11 @@ class NaphAppState {
     }
 
     fun updateLayoutConfig(config: LayoutCustomizationConfig) {
+        val headerChanged = _layoutConfig.value.showCatalogTypeInHeader != config.showCatalogTypeInHeader
         _layoutConfig.value = config
-        refreshLiveCatalogs()
+        if (headerChanged) {
+            refreshLiveCatalogs()
+        }
     }
 
     fun setNotifications(newEps: Boolean, p2pDone: Boolean) {
@@ -383,6 +384,48 @@ class NaphAppState {
         _profiles.value = _profiles.value + newProf
         _activeProfile.value = newProf
         _showProfilePicker.value = false
+        showBanner("Created profile '${newProf.name}'")
+    }
+
+    fun deleteProfile(profileId: String) {
+        val target = _profiles.value.find { it.id == profileId } ?: return
+        val remaining = _profiles.value.filterNot { it.id == profileId }
+        _watchlistByProfile.value = _watchlistByProfile.value - profileId
+        _watchProgressByProfile.value = _watchProgressByProfile.value - profileId
+
+        if (remaining.isEmpty()) {
+            val freshDefault = UserProfile(
+                id = "prof_${Clock.System.now().toEpochMilliseconds()}",
+                name = "My Profile",
+                avatarColorHex = 0xFF3B82F6,
+                avatarEmoji = "🎬"
+            )
+            _profiles.value = listOf(freshDefault)
+            _activeProfile.value = freshDefault
+            showBanner("Deleted '${target.name}' and reset to fresh profile")
+        } else {
+            _profiles.value = remaining
+            if (_activeProfile.value.id == profileId) {
+                _activeProfile.value = remaining.first()
+            }
+            showBanner("Deleted profile '${target.name}'")
+        }
+    }
+
+    fun renameProfile(profileId: String, newName: String, newEmoji: String) {
+        if (newName.isBlank()) return
+        val updatedList = _profiles.value.map { prof ->
+            if (prof.id == profileId) {
+                prof.copy(name = newName.trim(), avatarEmoji = newEmoji.ifBlank { prof.avatarEmoji })
+            } else {
+                prof
+            }
+        }
+        _profiles.value = updatedList
+        if (_activeProfile.value.id == profileId) {
+            _activeProfile.value = updatedList.first { it.id == profileId }
+        }
+        showBanner("Updated profile '${newName.trim()}'")
     }
 
     fun openMediaDetail(item: MediaItem) {

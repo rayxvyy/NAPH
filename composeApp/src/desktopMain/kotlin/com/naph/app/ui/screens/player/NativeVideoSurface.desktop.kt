@@ -222,21 +222,27 @@ actual fun NativeVideoSurface(
         }
     }
 
-    // Poll real time-pos and duration from libmpv
+    // Poll real time-pos and duration from libmpv on background IO thread so UI thread is never blocked
     LaunchedEffect(mpvHandle) {
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         val posRef = DoubleByReference()
         val durRef = DoubleByReference()
         while (isActive) {
-            delay(350)
-            val posOk = mpv.mpv_get_property(ctx, "time-pos", LibMpvJna.MPV_FORMAT_DOUBLE, posRef) >= 0
-            val durOk = mpv.mpv_get_property(ctx, "duration", LibMpvJna.MPV_FORMAT_DOUBLE, durRef) >= 0
-            if (posOk && durOk && durRef.value > 0.0) {
-                onPositionChanged(
-                    (posRef.value * 1000.0).toLong().coerceAtLeast(0L),
-                    (durRef.value * 1000.0).toLong().coerceAtLeast(1L)
-                )
+            delay(500)
+            val result = withContext(Dispatchers.IO) {
+                val posOk = mpv.mpv_get_property(ctx, "time-pos", LibMpvJna.MPV_FORMAT_DOUBLE, posRef) >= 0
+                val durOk = mpv.mpv_get_property(ctx, "duration", LibMpvJna.MPV_FORMAT_DOUBLE, durRef) >= 0
+                if (posOk && durOk && durRef.value > 0.0) {
+                    val p = (posRef.value * 1000.0).toLong().coerceAtLeast(0L)
+                    val d = (durRef.value * 1000.0).toLong().coerceAtLeast(1L)
+                    p to d
+                } else {
+                    null
+                }
+            }
+            if (result != null) {
+                onPositionChanged(result.first, result.second)
             }
         }
     }

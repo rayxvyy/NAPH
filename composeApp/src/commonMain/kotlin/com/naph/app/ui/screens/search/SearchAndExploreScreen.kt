@@ -17,11 +17,9 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -36,7 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.naph.app.ui.components.CinemaPosterCard
+import com.naph.app.ui.components.ModernFilterPill
+import com.naph.app.ui.components.ModernPrimaryButton
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.state.ProfileSettingsPage
 import com.naph.app.ui.theme.NaphColors
@@ -51,6 +52,7 @@ fun SearchAndExploreScreen(
     val results by appState.searchResults.collectAsState()
     val isSearching by appState.isSearching.collectAsState()
     val installedAddons by appState.installedAddons.collectAsState()
+    val layoutConfig by appState.layoutConfig.collectAsState()
     var selectedTypeFilter by remember { mutableStateOf("ALL") }
 
     val filtered = remember(results, selectedTypeFilter) {
@@ -62,16 +64,16 @@ fun SearchAndExploreScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 28.dp, vertical = 22.dp)
+            .padding(horizontal = 24.dp, vertical = 20.dp)
     ) {
-        Text("Search & Discover", style = MaterialTheme.typography.headlineLarge, color = Color.White)
+        Text("Search & Discover", style = MaterialTheme.typography.headlineLarge.copy(fontSize = 22.sp), color = Color.White)
         Text(
             text = "Search across your installed catalog addons and personal media servers",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
             color = NaphColors.TextSecondary
         )
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
 
         OutlinedTextField(
             value = query,
@@ -81,63 +83,67 @@ fun SearchAndExploreScreen(
                 if (isSearching) {
                     CircularProgressIndicator(
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp
                     )
                 }
             },
             placeholder = { Text("Search movies, series, anime, or IMDb ID (tt...)...") },
             singleLine = true,
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(12.dp),
             colors = naphTextFieldColors(),
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("ALL" to "All", "movie" to "Movies", "series" to "Series & Anime").forEach { (key, label) ->
-                FilterChip(
+                ModernFilterPill(
+                    label = label,
                     selected = selectedTypeFilter == key,
-                    onClick = { selectedTypeFilter = key },
-                    label = { Text(label) }
+                    onClick = { selectedTypeFilter = key }
                 )
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
 
         if (installedAddons.isEmpty() && results.isEmpty()) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.fillMaxSize()
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("No Catalog Addons Installed Yet", style = MaterialTheme.typography.titleLarge, color = Color.White)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("No Catalog Addons Installed Yet", style = MaterialTheme.typography.titleMedium, color = Color.White)
                     Text(
                         text = "Install a catalog addon in Profile → Content & Discovery → Installed Addons to search across catalogs.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
                         color = NaphColors.TextSecondary
                     )
-                    Button(
-                        onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ADDONS_MANAGER) },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Text("Go to Installed Addons", color = Color.White)
-                    }
+                    ModernPrimaryButton(
+                        text = "Go to Installed Addons",
+                        icon = Icons.Default.Extension,
+                        onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ADDONS_MANAGER) }
+                    )
                 }
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 160.dp),
-                contentPadding = PaddingValues(bottom = 84.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                columns = GridCells.Adaptive(minSize = layoutConfig.posterSizePreset.widthDp.dp),
+                contentPadding = PaddingValues(bottom = 72.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(filtered, key = { "${it.type}:${it.id}" }) { item ->
+                items(
+                    items = filtered,
+                    key = { "${it.type}:${it.id}" },
+                    contentType = { "poster_card" }
+                ) { item ->
                     CinemaPosterCard(
                         item = item,
+                        layoutConfig = layoutConfig,
                         onClick = { appState.openMediaDetail(item) }
                     )
                 }
