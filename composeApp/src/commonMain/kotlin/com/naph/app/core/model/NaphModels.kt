@@ -1,6 +1,5 @@
 package com.naph.app.core.model
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -25,7 +24,28 @@ data class AddonManifest(
 data class AddonCatalogDef(
     val type: String,
     val id: String,
-    val name: String = id
+    val name: String = id,
+    val extra: List<AddonExtraProp> = emptyList()
+) {
+    val requiresExtraInput: Boolean
+        get() = extra.any { it.isRequired }
+}
+
+@Serializable
+data class AddonExtraProp(
+    val name: String,
+    val isRequired: Boolean = false,
+    val options: List<String> = emptyList()
+)
+
+data class HomeCatalogSection(
+    val key: String,
+    val title: String,
+    val addonName: String,
+    val type: String,
+    val catalogId: String,
+    val manifestUrl: String,
+    val items: List<MediaItem>
 )
 
 @Serializable
@@ -41,7 +61,7 @@ data class MetaResponse(
 @Serializable
 data class MediaItem(
     val id: String,
-    val type: String = "movie", // "movie" or "series" or "anime"
+    val type: String = "movie",
     val name: String,
     val poster: String? = null,
     val background: String? = null,
@@ -57,7 +77,7 @@ data class MediaItem(
     val trailers: List<TrailerSource> = emptyList(),
     val trailerStreams: List<TrailerStream> = emptyList(),
     val aggregatedRatings: AggregatedRatings? = null,
-    val sourceOrigin: String = "Addon" // "Addon", "Jellyfin", "Emby"
+    val sourceOrigin: String = "Addon"
 )
 
 @Serializable
@@ -77,7 +97,7 @@ data class EpisodeVideo(
 
 @Serializable
 data class TrailerSource(
-    val source: String, // YouTube Video ID (e.g. "dQw4w9WgXcQ")
+    val source: String,
     val type: String = "Trailer"
 )
 
@@ -87,9 +107,6 @@ data class TrailerStream(
     val ytId: String
 )
 
-/**
- * Aggregated Ratings from IMDb, Rotten Tomatoes, Metacritic, Trakt, and MDBList
- */
 @Serializable
 data class AggregatedRatings(
     val imdb: String? = null,
@@ -100,9 +117,6 @@ data class AggregatedRatings(
     val mdbListScore: String? = null
 )
 
-/**
- * Stremio Stream & P2P / Debrid / Jellyfin Unified Stream Object
- */
 @Serializable
 data class StreamResponse(
     val streams: List<MediaStream> = emptyList()
@@ -120,15 +134,12 @@ data class MediaStream(
     val externalUrl: String? = null,
     val ytId: String? = null,
     val behaviorHints: StreamBehaviorHints? = null,
-    val addonName: String = "Community Addon",
+    val addonName: String = "Addon",
     val isDebridCached: Boolean = false,
     val debridProvider: String? = null
 ) {
     val isP2PTorrent: Boolean
         get() = !infoHash.isNullOrBlank() && url.isNullOrBlank()
-
-    val displayName: String
-        get() = name ?: addonName
 
     val displayDetails: String
         get() = title ?: description ?: (url ?: "P2P InfoHash: ${infoHash?.take(10)}...")
@@ -171,9 +182,6 @@ data class StreamBehaviorHints(
     val notWebReady: Boolean? = null
 )
 
-/**
- * Subtitles (Stremio Subtitles + ASS/SSA Live Appearance Style)
- */
 @Serializable
 data class SubtitleResponse(
     val subtitles: List<SubtitleTrack> = emptyList()
@@ -185,7 +193,7 @@ data class SubtitleTrack(
     val url: String,
     val lang: String,
     val label: String = lang.uppercase(),
-    val format: String = "srt" // "srt", "vtt", "ass", "ssa"
+    val format: String = "srt"
 )
 
 @Serializable
@@ -201,9 +209,6 @@ data class SubtitleAppearanceConfig(
     val preserveAssStyling: Boolean = true
 )
 
-/**
- * IntroDB / AniSkip Auto-Skip Segments (Intros, Recaps, Outros)
- */
 @Serializable
 data class SkipSegment(
     val type: SkipSegmentType,
@@ -217,9 +222,6 @@ enum class SkipSegmentType(val label: String) {
     OUTRO("Skip Credits")
 }
 
-/**
- * NAPH Household Profile & Watch Progress (Synced via Supabase Cloud)
- */
 @Serializable
 data class UserProfile(
     val id: String,
@@ -254,20 +256,17 @@ data class WatchProgressEntry(
         get() = if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
 }
 
-/**
- * P2P Engine Configuration & Real-Time Telemetry
- */
 @Serializable
 data class P2PSettings(
     val useTempCacheAutoClean: Boolean = true,
     val keepDownloadedFiles: Boolean = false,
     val customSaveDirectory: String = "",
     val maxCacheSizeGb: Int = 6,
-    val maxDownloadSpeedKbps: Int = 0, // 0 = Unlimited
+    val maxDownloadSpeedKbps: Int = 0,
     val maxUploadSpeedKbps: Int = 512,
     val enableDht: Boolean = true,
     val enablePeerExchange: Boolean = true,
-    val externalTorrServerUrl: String = "" // Optional external TorrServer override
+    val externalTorrServerUrl: String = ""
 )
 
 data class P2PStreamTelemetry(
@@ -285,9 +284,6 @@ data class P2PStreamTelemetry(
     val headerPiecesReady: Boolean = false
 )
 
-/**
- * Debrid & Personal Media Server Configurations
- */
 @Serializable
 data class DebridConfig(
     val realDebridApiKey: String = "",
@@ -300,7 +296,7 @@ data class DebridConfig(
 @Serializable
 data class MediaServerConnection(
     val id: String,
-    val type: ServerType, // JELLYFIN or EMBY
+    val type: ServerType,
     val name: String,
     val serverUrl: String,
     val username: String,
@@ -321,5 +317,27 @@ data class TrackerSyncConfig(
     val simklAccessToken: String = "",
     val simklUsername: String = "",
     val mdbListApiKey: String = "",
+    val tmdbApiKey: String = "",
     val autoScrobbleEnabled: Boolean = true
+)
+
+@Serializable
+data class LayoutCustomizationConfig(
+    val showHeroShowcase: Boolean = true,
+    val showCatalogTypeInHeader: Boolean = true,
+    val hideUnreleasedContent: Boolean = false,
+    val showContinueWatchingRow: Boolean = true,
+    val posterCornerRadiusDp: Int = 14,
+    val sidebarAlwaysExpanded: Boolean = true,
+    val showAggregatedRatingsOnDetail: Boolean = true,
+    val autoPlayInAppTrailersOnDetail: Boolean = false
+)
+
+@Serializable
+data class WatchPartySession(
+    val roomCode: String,
+    val hostName: String,
+    val activeMediaTitle: String = "Waiting for playback...",
+    val participantCount: Int = 1,
+    val isConnected: Boolean = true
 )

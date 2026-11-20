@@ -1,0 +1,5 @@
+# Ensure GitHub Linguist recognizes NAPH as 100% Kotlin Multiplatform
+*.kt linguist-language=Kotlin
+*.kts linguist-language=Kotlin
+*.swift linguist-language=Swift
+*.sql linguist-language=SQL

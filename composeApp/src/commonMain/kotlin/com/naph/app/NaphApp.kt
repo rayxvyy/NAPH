@@ -21,10 +21,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudQueue
-import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,8 +48,7 @@ import com.naph.app.ui.screens.library.LibraryAndServersScreen
 import com.naph.app.ui.screens.player.UnifiedVideoPlayerScreen
 import com.naph.app.ui.screens.profiles.ProfilePickerOverlay
 import com.naph.app.ui.screens.search.SearchAndExploreScreen
-import com.naph.app.ui.screens.settings.AddonsAndP2PScreen
-import com.naph.app.ui.screens.settings.CloudDebridAndTrackersSettingsScreen
+import com.naph.app.ui.screens.settings.ProfileAndSettingsScreen
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.state.NaphTab
 import com.naph.app.ui.theme.NaphColors
@@ -67,34 +65,38 @@ fun NaphApp() {
     val activeProfile by appState.activeProfile.collectAsState()
     val p2pTelemetry by appState.p2pTelemetry.collectAsState()
     val bannerMessage by appState.statusBannerMessage.collectAsState()
+    val selectedThemePreset by appState.selectedThemePreset.collectAsState()
+    val amoledBlack by appState.amoledBlackEnabled.collectAsState()
+    val layoutConfig by appState.layoutConfig.collectAsState()
 
-    NaphTheme {
+    NaphTheme(
+        preset = selectedThemePreset,
+        amoledBlack = amoledBlack
+    ) {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .background(NaphColors.ObsidianBg)
+                .background(MaterialTheme.colorScheme.background)
         ) {
             val isDesktopOrWide = maxWidth >= 720.dp
 
-            // If Video Player is Active -> Fullscreen Unified Video Player
             if (activePlaybackItem != null) {
                 UnifiedVideoPlayerScreen(appState = appState)
             } else {
                 Row(modifier = Modifier.fillMaxSize()) {
-                    // Desktop / Tablet Adaptive Left Cinema Navigation Rail
+                    // Left Navigation Sidebar: Home, Search, Library, Profile
                     if (isDesktopOrWide) {
                         DesktopNavigationRail(
                             currentTab = currentTab,
                             activeProfileName = activeProfile.name,
                             activeProfileEmoji = activeProfile.avatarEmoji,
                             activeProfileColor = Color(activeProfile.avatarColorHex),
+                            sidebarExpanded = layoutConfig.sidebarAlwaysExpanded,
                             hasActiveP2P = p2pTelemetry != null,
-                            onSelectTab = { appState.selectTab(it) },
-                            onOpenProfilePicker = { appState.toggleProfilePicker(true) }
+                            onSelectTab = { appState.selectTab(it) }
                         )
                     }
 
-                    // Main Content Viewport
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -111,16 +113,14 @@ fun NaphApp() {
                                     NaphTab.HOME -> HomeScreen(appState = appState)
                                     NaphTab.SEARCH -> SearchAndExploreScreen(appState = appState)
                                     NaphTab.LIBRARY -> LibraryAndServersScreen(appState = appState)
-                                    NaphTab.ADDONS -> AddonsAndP2PScreen(appState = appState)
-                                    NaphTab.SETTINGS -> CloudDebridAndTrackersSettingsScreen(appState = appState)
+                                    NaphTab.PROFILE -> ProfileAndSettingsScreen(appState = appState)
                                 }
                             }
                         }
 
-                        // Mobile Floating Bottom Navigation Bar (iOS & Android Portrait)
                         if (!isDesktopOrWide && selectedMediaItem == null) {
                             NavigationBar(
-                                containerColor = NaphColors.DeepSurface.copy(alpha = 0.96f),
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                                 modifier = Modifier.align(Alignment.BottomCenter)
                             ) {
                                 NaphTab.entries.forEach { tab ->
@@ -137,12 +137,10 @@ fun NaphApp() {
                 }
             }
 
-            // Netflix / Apple TV Style "Who's Watching?" Multi-Profile Overlay
             if (showProfilePicker) {
                 ProfilePickerOverlay(appState = appState)
             }
 
-            // Floating Status Toast Banner
             bannerMessage?.let { msg ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -151,13 +149,13 @@ fun NaphApp() {
                         .align(Alignment.BottomEnd)
                         .padding(24.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(NaphColors.CardSurface)
-                        .border(1.dp, NaphColors.CyanGlow, RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                         .clickable { appState.dismissBanner() }
                         .padding(horizontal = 18.dp, vertical = 12.dp)
                 ) {
-                    Icon(Icons.Default.CloudQueue, contentDescription = null, tint = NaphColors.CyanGlow)
-                    Text(msg, style = MaterialTheme.typography.bodyMedium, color = NaphColors.TextPrimary)
+                    Icon(Icons.Default.CloudQueue, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text(msg, style = MaterialTheme.typography.bodyMedium, color = Color.White)
                 }
             }
         }
@@ -170,152 +168,148 @@ private fun DesktopNavigationRail(
     activeProfileName: String,
     activeProfileEmoji: String,
     activeProfileColor: Color,
+    sidebarExpanded: Boolean,
     hasActiveP2P: Boolean,
-    onSelectTab: (NaphTab) -> Unit,
-    onOpenProfilePicker: () -> Unit
+    onSelectTab: (NaphTab) -> Unit
 ) {
+    val railWidth = if (sidebarExpanded) 216.dp else 76.dp
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier
-            .width(220.dp)
+            .width(railWidth)
             .fillMaxHeight()
-            .background(NaphColors.DeepSurface)
-            .border(width = 1.dp, color = NaphColors.ElevatedBorder)
-            .padding(vertical = 22.dp, horizontal = 14.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(width = 1.dp, color = MaterialTheme.colorScheme.outline)
+            .padding(vertical = 22.dp, horizontal = 12.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            // NAPH Brand Header
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+        // Top Brand Logo
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(MaterialTheme.colorScheme.primary)
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(NaphColors.ElectricPrimary)
-                ) {
-                    Text(
-                        text = "N",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
-                    )
-                }
+                Text(
+                    text = "N",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White
+                )
+            }
+            if (sidebarExpanded) {
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
                         text = "NAPH",
                         style = MaterialTheme.typography.titleLarge.copy(letterSpacing = 1.8.sp),
-                        fontWeight = FontWeight.ExtraBold
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
                     )
                     Text(
-                        text = "P2P • 4K CINEMA",
+                        text = "MEDIA CENTER",
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = NaphColors.CyanGlow
+                        color = MaterialTheme.colorScheme.secondary
                     )
                 }
             }
+        }
 
-            Spacer(Modifier.height(14.dp))
-
+        // Centered 4 Primary Tabs: Home, Search, Library, Profile (Exactly like Nuvio!)
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             NaphTab.entries.forEach { tab ->
                 val isSelected = currentTab == tab
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .background(
-                            if (isSelected) NaphColors.ElectricPrimary.copy(alpha = 0.2f)
+                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
                             else Color.Transparent
                         )
                         .border(
                             width = if (isSelected) 1.dp else 0.dp,
-                            color = if (isSelected) NaphColors.ElectricPrimary.copy(alpha = 0.6f) else Color.Transparent,
-                            shape = RoundedCornerShape(12.dp)
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            shape = RoundedCornerShape(14.dp)
                         )
                         .clickable { onSelectTab(tab) }
-                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                        .padding(horizontal = 14.dp, vertical = 13.dp)
                 ) {
-                    Icon(
-                        imageVector = iconForTab(tab),
-                        contentDescription = tab.label,
-                        tint = if (isSelected) NaphColors.CyanGlow else NaphColors.TextSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        text = tab.label,
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
-                        color = if (isSelected) NaphColors.TextPrimary else NaphColors.TextSecondary,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                    )
+                    if (tab == NaphTab.PROFILE) {
+                        // Show active profile avatar badge on Profile tab
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(activeProfileColor.copy(alpha = 0.30f))
+                        ) {
+                            Text(activeProfileEmoji, fontSize = 13.sp)
+                        }
+                    } else {
+                        Icon(
+                            imageVector = iconForTab(tab),
+                            contentDescription = tab.label,
+                            tint = if (isSelected) Color.White else NaphColors.TextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    if (sidebarExpanded) {
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = tab.label,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (isSelected) Color.White else NaphColors.TextSecondary,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                            if (tab == NaphTab.PROFILE) {
+                                Text(
+                                    text = activeProfileName,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Bottom Active Profile Switcher & P2P Engine Status Indicator
-        Column(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxWidth()
+        // Bottom P2P Swarm Status Pill
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(NaphColors.CardSurface)
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(if (hasActiveP2P) NaphColors.CyanGlow else NaphColors.EmeraldSeed)
-                )
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(if (hasActiveP2P) NaphColors.CyanGlow else NaphColors.EmeraldSeed)
+            )
+            if (sidebarExpanded) {
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (hasActiveP2P) "P2P Swarm Active" else "P2P Engine Standby",
+                    text = if (hasActiveP2P) "P2P Swarm Active" else "P2P Engine Ready",
                     style = MaterialTheme.typography.labelSmall,
                     color = NaphColors.TextSecondary
                 )
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(NaphColors.CardSurface)
-                    .border(1.dp, NaphColors.ElevatedBorder, RoundedCornerShape(12.dp))
-                    .clickable { onOpenProfilePicker() }
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(activeProfileColor.copy(alpha = 0.25f))
-                ) {
-                    Text(activeProfileEmoji, fontSize = 18.sp)
-                }
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = activeProfileName,
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp),
-                        maxLines = 1
-                    )
-                    Text(
-                        text = "Switch Profile",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = NaphColors.CyanGlow
-                    )
-                }
             }
         }
     }
@@ -325,6 +319,5 @@ private fun iconForTab(tab: NaphTab): ImageVector = when (tab) {
     NaphTab.HOME -> Icons.Default.Home
     NaphTab.SEARCH -> Icons.Default.Search
     NaphTab.LIBRARY -> Icons.Default.VideoLibrary
-    NaphTab.ADDONS -> Icons.Default.Extension
-    NaphTab.SETTINGS -> Icons.Default.Settings
+    NaphTab.PROFILE -> Icons.Default.Person
 }

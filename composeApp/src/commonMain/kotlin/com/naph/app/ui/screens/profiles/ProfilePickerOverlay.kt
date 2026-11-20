@@ -40,10 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.theme.NaphColors
+import com.naph.app.ui.theme.naphTextFieldColors
 
-/**
- * Netflix / Apple TV Style "Who's Watching NAPH?" Multi-Profile Selector Overlay
- */
 @Composable
 fun ProfilePickerOverlay(
     appState: NaphAppState,
@@ -69,11 +67,12 @@ fun ProfilePickerOverlay(
         ) {
             Text(
                 text = "Who's Watching NAPH?",
-                style = MaterialTheme.typography.displayLarge
+                style = MaterialTheme.typography.displayLarge,
+                color = Color.White
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Each profile keeps its own separate watch progress, watchlist, and language preferences across Windows, Linux, iOS & Android",
+                text = "Each profile keeps its own separate watch progress, watchlist, and preferences across Windows, Linux, iOS & Android",
                 style = MaterialTheme.typography.bodyLarge,
                 color = NaphColors.TextSecondary
             )
@@ -117,7 +116,6 @@ fun ProfilePickerOverlay(
                     }
                 }
 
-                // Add Profile Card
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
@@ -130,13 +128,13 @@ fun ProfilePickerOverlay(
                         modifier = Modifier
                             .size(112.dp)
                             .clip(RoundedCornerShape(24.dp))
-                            .background(NaphColors.CardSurface)
-                            .border(1.dp, NaphColors.ElevatedBorder, RoundedCornerShape(24.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(24.dp))
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Add Profile",
-                            tint = NaphColors.CyanGlow,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(40.dp)
                         )
                     }
@@ -152,17 +150,18 @@ fun ProfilePickerOverlay(
                     modifier = Modifier
                         .width(420.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(NaphColors.CardSurface)
-                        .border(1.dp, NaphColors.ElevatedBorder, RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
                         .padding(20.dp)
                 ) {
-                    Text("Create Household Profile", style = MaterialTheme.typography.titleLarge)
+                    Text("Create Household Profile", style = MaterialTheme.typography.titleLarge, color = Color.White)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
                             value = newName,
                             onValueChange = { newName = it },
                             label = { Text("Profile Name") },
                             singleLine = true,
+                            colors = naphTextFieldColors(),
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
@@ -170,6 +169,7 @@ fun ProfilePickerOverlay(
                             onValueChange = { newEmoji = it },
                             label = { Text("Emoji") },
                             singleLine = true,
+                            colors = naphTextFieldColors(),
                             modifier = Modifier.width(90.dp)
                         )
                     }
@@ -177,7 +177,7 @@ fun ProfilePickerOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Kids Safe Catalog Mode", style = MaterialTheme.typography.bodyMedium)
+                        Text("Kids Safe Catalog Mode", style = MaterialTheme.typography.bodyMedium, color = Color.White)
                         Spacer(Modifier.width(12.dp))
                         Switch(checked = isKids, onCheckedChange = { isKids = it })
                     }
@@ -188,12 +188,12 @@ fun ProfilePickerOverlay(
                                 newName = ""
                                 showCreateForm = false
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = NaphColors.ElectricPrimary)
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) {
-                            Text("Create & Switch")
+                            Text("Create & Switch", color = Color.White)
                         }
                         OutlinedButton(onClick = { showCreateForm = false }) {
-                            Text("Cancel")
+                            Text("Cancel", color = Color.White)
                         }
                     }
                 }

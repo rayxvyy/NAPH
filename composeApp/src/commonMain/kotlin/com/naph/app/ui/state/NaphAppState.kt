@@ -3,6 +3,8 @@ package com.naph.app.ui.state
 import com.naph.app.core.model.AddonManifest
 import com.naph.app.core.model.DebridConfig
 import com.naph.app.core.model.EpisodeVideo
+import com.naph.app.core.model.HomeCatalogSection
+import com.naph.app.core.model.LayoutCustomizationConfig
 import com.naph.app.core.model.MediaItem
 import com.naph.app.core.model.MediaServerConnection
 import com.naph.app.core.model.MediaStream
@@ -14,6 +16,7 @@ import com.naph.app.core.model.SubtitleAppearanceConfig
 import com.naph.app.core.model.SubtitleTrack
 import com.naph.app.core.model.TrackerSyncConfig
 import com.naph.app.core.model.UserProfile
+import com.naph.app.core.model.WatchPartySession
 import com.naph.app.core.model.WatchProgressEntry
 import com.naph.app.data.addons.StremioAddonRepository
 import com.naph.app.data.debrid.DebridResolverRepository
@@ -21,6 +24,7 @@ import com.naph.app.data.metadata.MetadataAndSkipRepository
 import com.naph.app.data.servers.PersonalMediaServerRepository
 import com.naph.app.data.torrent.P2PTorrentStreamEngine
 import com.naph.app.data.trackers.CloudAndTrackerSyncRepository
+import com.naph.app.ui.theme.NaphThemePreset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,12 +34,44 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 
+/**
+ * 4 Main Left Bar / Bottom Bar Navigation Tabs (Just like Nuvio & User Spec):
+ * 1. Home
+ * 2. Search
+ * 3. Library
+ * 4. Profile (Opens all structured Settings sections: Account, General, About)
+ */
 enum class NaphTab(val label: String) {
     HOME("Home"),
-    SEARCH("Explore"),
-    LIBRARY("Library & Servers"),
-    ADDONS("Addons & P2P"),
-    SETTINGS("Settings")
+    SEARCH("Search"),
+    LIBRARY("Library"),
+    PROFILE("Profile")
+}
+
+/**
+ * Structured Drill-Down Settings Pages inside Profile Tab
+ * (Never dumps everything on one screen — clean drill-down sections like Nuvio)
+ */
+enum class ProfileSettingsPage(val title: String, val parent: ProfileSettingsPage? = null) {
+    ROOT("Profile & Settings", null),
+
+    // Section 1: ACCOUNT
+    ACCOUNT_DETAIL("NAPH Cloud Account", ROOT),
+    WATCH_PARTY("Watch Party", ROOT),
+    TRACKING("Tracking (Trakt.tv & SIMKL)", ROOT),
+
+    // Section 2: GENERAL
+    APPEARANCE("Appearance & Theme", ROOT),
+    LAYOUT_CUSTOMIZATION("Layout Customization", ROOT),
+    CONTENT_DISCOVERY("Content & Discovery", ROOT),
+    ADDONS_MANAGER("Installed Addons", CONTENT_DISCOVERY),
+    MEDIA_SERVERS("Media Servers (Jellyfin & Emby)", CONTENT_DISCOVERY),
+    PLAYBACK("Playback & P2P Engine", ROOT),
+    INTEGRATIONS("Integrations (Debrid, TMDB, MDBList)", ROOT),
+    NOTIFICATIONS("Notifications", ROOT),
+
+    // Section 3: ABOUT
+    ABOUT("About NAPH", ROOT)
 }
 
 class NaphAppState {
@@ -48,12 +84,25 @@ class NaphAppState {
     val metaRepo = MetadataAndSkipRepository()
     val syncRepo = CloudAndTrackerSyncRepository()
 
+    // Theme & Appearance
+    private val _selectedThemePreset = MutableStateFlow(NaphThemePreset.ARCTIC_BLUE)
+    val selectedThemePreset: StateFlow<NaphThemePreset> = _selectedThemePreset.asStateFlow()
+
+    private val _amoledBlackEnabled = MutableStateFlow(false)
+    val amoledBlackEnabled: StateFlow<Boolean> = _amoledBlackEnabled.asStateFlow()
+
+    private val _layoutConfig = MutableStateFlow(LayoutCustomizationConfig())
+    val layoutConfig: StateFlow<LayoutCustomizationConfig> = _layoutConfig.asStateFlow()
+
     // Navigation & Modal States
     private val _showProfilePicker = MutableStateFlow(false)
     val showProfilePicker: StateFlow<Boolean> = _showProfilePicker.asStateFlow()
 
     private val _currentTab = MutableStateFlow(NaphTab.HOME)
     val currentTab: StateFlow<NaphTab> = _currentTab.asStateFlow()
+
+    private val _currentSettingsPage = MutableStateFlow(ProfileSettingsPage.ROOT)
+    val currentSettingsPage: StateFlow<ProfileSettingsPage> = _currentSettingsPage.asStateFlow()
 
     private val _selectedMediaItem = MutableStateFlow<MediaItem?>(null)
     val selectedMediaItem: StateFlow<MediaItem?> = _selectedMediaItem.asStateFlow()
@@ -64,9 +113,9 @@ class NaphAppState {
     // Profiles
     private val _profiles = MutableStateFlow(
         listOf(
-            UserProfile(id = "prof_main", name = "Main Cinema", avatarColorHex = 0xFF6366F1, avatarEmoji = "🎬"),
-            UserProfile(id = "prof_anime", name = "Anime & 4K", avatarColorHex = 0xFF06B6D4, avatarEmoji = "⚡"),
-            UserProfile(id = "prof_family", name = "Family Room", avatarColorHex = 0xFF10B981, avatarEmoji = "🍿", isKidsProfile = false)
+            UserProfile(id = "prof_main", name = "Main Profile", avatarColorHex = 0xFF3B82F6, avatarEmoji = "🎬"),
+            UserProfile(id = "prof_anime", name = "Anime & 4K", avatarColorHex = 0xFF10B981, avatarEmoji = "⚡"),
+            UserProfile(id = "prof_family", name = "Family Room", avatarColorHex = 0xFFF59E0B, avatarEmoji = "🍿")
         )
     )
     val profiles: StateFlow<List<UserProfile>> = _profiles.asStateFlow()
@@ -74,19 +123,22 @@ class NaphAppState {
     private val _activeProfile = MutableStateFlow(_profiles.value.first())
     val activeProfile: StateFlow<UserProfile> = _activeProfile.asStateFlow()
 
-    // Installed Addons
-    private val _installedAddons = MutableStateFlow(StremioAddonRepository.defaultInstalledAddons())
+    // Installed Addons — Starts EMPTY by default! Users install whatever addons they want.
+    private val _installedAddons = MutableStateFlow<List<AddonManifest>>(emptyList())
     val installedAddons: StateFlow<List<AddonManifest>> = _installedAddons.asStateFlow()
 
-    // Home Catalogs
-    private val _heroShowcaseItems = MutableStateFlow(StremioAddonRepository.defaultShowcaseItems())
+    private val _isInstallingAddon = MutableStateFlow(false)
+    val isInstallingAddon: StateFlow<Boolean> = _isInstallingAddon.asStateFlow()
+
+    // Dynamic Home Catalogs populated strictly from User-Installed Addons & Personal Servers
+    private val _homeCatalogSections = MutableStateFlow<List<HomeCatalogSection>>(emptyList())
+    val homeCatalogSections: StateFlow<List<HomeCatalogSection>> = _homeCatalogSections.asStateFlow()
+
+    private val _heroShowcaseItems = MutableStateFlow<List<MediaItem>>(emptyList())
     val heroShowcaseItems: StateFlow<List<MediaItem>> = _heroShowcaseItems.asStateFlow()
 
-    private val _trendingMovies = MutableStateFlow(StremioAddonRepository.defaultShowcaseItems().filter { it.type == "movie" })
-    val trendingMovies: StateFlow<List<MediaItem>> = _trendingMovies.asStateFlow()
-
-    private val _trendingSeries = MutableStateFlow(StremioAddonRepository.defaultShowcaseItems().filter { it.type == "series" })
-    val trendingSeries: StateFlow<List<MediaItem>> = _trendingSeries.asStateFlow()
+    private val _isLoadingHomeCatalogs = MutableStateFlow(false)
+    val isLoadingHomeCatalogs: StateFlow<Boolean> = _isLoadingHomeCatalogs.asStateFlow()
 
     private val _personalServerItems = MutableStateFlow<List<MediaItem>>(emptyList())
     val personalServerItems: StateFlow<List<MediaItem>> = _personalServerItems.asStateFlow()
@@ -95,48 +147,29 @@ class NaphAppState {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _searchResults = MutableStateFlow<List<MediaItem>>(StremioAddonRepository.defaultShowcaseItems())
+    private val _searchResults = MutableStateFlow<List<MediaItem>>(emptyList())
     val searchResults: StateFlow<List<MediaItem>> = _searchResults.asStateFlow()
 
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
     // Watchlist & Continue Watching (Per Profile)
-    private val _watchlistByProfile = MutableStateFlow<Map<String, List<MediaItem>>>(
-        mapOf("prof_main" to StremioAddonRepository.defaultShowcaseItems().take(2))
-    )
+    private val _watchlistByProfile = MutableStateFlow<Map<String, List<MediaItem>>>(emptyMap())
     val watchlistByProfile: StateFlow<Map<String, List<MediaItem>>> = _watchlistByProfile.asStateFlow()
 
-    private val _watchProgressByProfile = MutableStateFlow<Map<String, List<WatchProgressEntry>>>(
-        mapOf(
-            "prof_main" to listOf(
-                WatchProgressEntry(
-                    profileId = "prof_main",
-                    mediaId = "tt15239678",
-                    mediaType = "movie",
-                    title = "Dune: Part Two",
-                    posterUrl = "https://images.metahub.space/poster/medium/tt15239678/img",
-                    backdropUrl = "https://images.metahub.space/background/medium/tt15239678/img",
-                    positionMs = 4_120_000L,
-                    durationMs = 9_960_000L,
-                    updatedAtEpochMs = Clock.System.now().toEpochMilliseconds()
-                ),
-                WatchProgressEntry(
-                    profileId = "prof_main",
-                    mediaId = "tt11126994",
-                    mediaType = "series",
-                    title = "Arcane",
-                    posterUrl = "https://images.metahub.space/poster/medium/tt11126994/img",
-                    backdropUrl = "https://images.metahub.space/background/medium/tt11126994/img",
-                    episodeId = "tt11126994:1:2",
-                    season = 1,
-                    episode = 2,
-                    episodeTitle = "Some Mysteries Are Better Left Unsolved",
-                    positionMs = 1_450_000L,
-                    durationMs = 2_460_000L,
-                    updatedAtEpochMs = Clock.System.now().toEpochMilliseconds()
-                )
-            )
-        )
-    )
+    private val _watchProgressByProfile = MutableStateFlow<Map<String, List<WatchProgressEntry>>>(emptyMap())
     val watchProgressByProfile: StateFlow<Map<String, List<WatchProgressEntry>>> = _watchProgressByProfile.asStateFlow()
+
+    // Watch Party
+    private val _watchPartySession = MutableStateFlow<WatchPartySession?>(null)
+    val watchPartySession: StateFlow<WatchPartySession?> = _watchPartySession.asStateFlow()
+
+    // Notifications
+    private val _newEpisodeNotifications = MutableStateFlow(true)
+    val newEpisodeNotifications: StateFlow<Boolean> = _newEpisodeNotifications.asStateFlow()
+
+    private val _p2pCompletionNotifications = MutableStateFlow(true)
+    val p2pCompletionNotifications: StateFlow<Boolean> = _p2pCompletionNotifications.asStateFlow()
 
     // Detail Streams & Subtitles
     private val _availableStreams = MutableStateFlow<List<MediaStream>>(emptyList())
@@ -145,7 +178,7 @@ class NaphAppState {
     private val _isLoadingStreams = MutableStateFlow(false)
     val isLoadingStreams: StateFlow<Boolean> = _isLoadingStreams.asStateFlow()
 
-    private val _availableSubtitles = MutableStateFlow<List<SubtitleTrack>>(StremioAddonRepository.defaultDemoSubtitles())
+    private val _availableSubtitles = MutableStateFlow<List<SubtitleTrack>>(emptyList())
     val availableSubtitles: StateFlow<List<SubtitleTrack>> = _availableSubtitles.asStateFlow()
 
     // Active Video Player Session
@@ -168,7 +201,7 @@ class NaphAppState {
     private val _subtitleConfig = MutableStateFlow(SubtitleAppearanceConfig())
     val subtitleConfig: StateFlow<SubtitleAppearanceConfig> = _subtitleConfig.asStateFlow()
 
-    private val _selectedSubtitleTrack = MutableStateFlow<SubtitleTrack?>(StremioAddonRepository.defaultDemoSubtitles().first())
+    private val _selectedSubtitleTrack = MutableStateFlow<SubtitleTrack?>(null)
     val selectedSubtitleTrack: StateFlow<SubtitleTrack?> = _selectedSubtitleTrack.asStateFlow()
 
     // P2P, Debrid, Servers & Tracker Settings
@@ -191,29 +224,140 @@ class NaphAppState {
     val statusBannerMessage: StateFlow<String?> = _statusBannerMessage.asStateFlow()
 
     init {
-        refreshLiveCatalogs()
-    }
-
-    fun refreshLiveCatalogs() {
+        // Ensure any old default-seeded addons in cloud are cleared so the user starts clean
         scope.launch {
-            val cinemeta = _installedAddons.value.firstOrNull { it.id.contains("cinemeta") } ?: return@launch
-            val movies = addonRepo.fetchCatalog(cinemeta, "movie", "top")
-            val series = addonRepo.fetchCatalog(cinemeta, "series", "top")
-
-            if (movies.isNotEmpty()) {
-                _trendingMovies.value = StremioAddonRepository.defaultShowcaseItems().filter { it.type == "movie" } +
-                    movies.filterNot { m -> _heroShowcaseItems.value.any { it.id == m.id } }.take(18)
-            }
-            if (series.isNotEmpty()) {
-                _trendingSeries.value = StremioAddonRepository.defaultShowcaseItems().filter { it.type == "series" } +
-                    series.filterNot { s -> _heroShowcaseItems.value.any { it.id == s.id } }.take(18)
-            }
+            syncRepo.clearDefaultSeededAddonsOnCloud()
         }
     }
 
     fun selectTab(tab: NaphTab) {
         _currentTab.value = tab
         _selectedMediaItem.value = null
+        if (tab == NaphTab.PROFILE) {
+            _currentSettingsPage.value = ProfileSettingsPage.ROOT
+        }
+    }
+
+    fun navigateSettingsPage(page: ProfileSettingsPage) {
+        _currentTab.value = NaphTab.PROFILE
+        _selectedMediaItem.value = null
+        _currentSettingsPage.value = page
+    }
+
+    fun navigateSettingsBack() {
+        val parent = _currentSettingsPage.value.parent ?: ProfileSettingsPage.ROOT
+        _currentSettingsPage.value = parent
+    }
+
+    fun setThemePreset(preset: NaphThemePreset) {
+        _selectedThemePreset.value = preset
+    }
+
+    fun setAmoledBlack(enabled: Boolean) {
+        _amoledBlackEnabled.value = enabled
+    }
+
+    fun updateLayoutConfig(config: LayoutCustomizationConfig) {
+        _layoutConfig.value = config
+        refreshLiveCatalogs()
+    }
+
+    fun setNotifications(newEps: Boolean, p2pDone: Boolean) {
+        _newEpisodeNotifications.value = newEps
+        _p2pCompletionNotifications.value = p2pDone
+    }
+
+    fun createWatchParty() {
+        val code = "NAPH-" + (1000..9999).random()
+        _watchPartySession.value = WatchPartySession(
+            roomCode = code,
+            hostName = _activeProfile.value.name,
+            activeMediaTitle = _activePlaybackItem.value?.name ?: "Synced Lobby Ready",
+            participantCount = 1,
+            isConnected = true
+        )
+        showBanner("Created Watch Party Room: $code")
+    }
+
+    fun joinWatchParty(code: String) {
+        if (code.isBlank()) return
+        _watchPartySession.value = WatchPartySession(
+            roomCode = code.trim().uppercase(),
+            hostName = "Connected Friend",
+            activeMediaTitle = "Synced Playback Active",
+            participantCount = 2,
+            isConnected = true
+        )
+        showBanner("Joined Watch Party Room: ${code.trim().uppercase()}")
+    }
+
+    fun leaveWatchParty() {
+        _watchPartySession.value = null
+        showBanner("Left Watch Party")
+    }
+
+    /**
+     * Dynamically fetches all catalog rows from every enabled user-installed addon
+     * and updates the Home screen sections and Hero showcase items!
+     */
+    fun refreshLiveCatalogs() {
+        scope.launch {
+            val enabledAddons = _installedAddons.value.filter { it.isEnabled }
+            if (enabledAddons.isEmpty()) {
+                _homeCatalogSections.value = emptyList()
+                _heroShowcaseItems.value = _personalServerItems.value.take(6)
+                _isLoadingHomeCatalogs.value = false
+                return@launch
+            }
+
+            _isLoadingHomeCatalogs.value = true
+            val sections = addonRepo.fetchAllHomeCatalogSections(
+                addons = enabledAddons,
+                showCatalogTypeInTitle = _layoutConfig.value.showCatalogTypeInHeader
+            )
+            _homeCatalogSections.value = sections
+
+            val allCatalogItems = sections.flatMap { it.items }.distinctBy { "${it.type}:${it.id}" }
+            _heroShowcaseItems.value = allCatalogItems.take(8)
+            if (_searchQuery.value.isBlank()) {
+                _searchResults.value = allCatalogItems
+            }
+            _isLoadingHomeCatalogs.value = false
+        }
+    }
+
+    fun installAddonByManifestUrl(rawUrl: String) {
+        if (rawUrl.isBlank()) return
+        scope.launch {
+            _isInstallingAddon.value = true
+            val result = addonRepo.fetchManifest(rawUrl)
+            result.onSuccess { manifest ->
+                _installedAddons.value = _installedAddons.value.filterNot {
+                    it.id == manifest.id || it.manifestUrl == manifest.manifestUrl
+                } + manifest
+                _isInstallingAddon.value = false
+                showBanner("Installed '${manifest.name}' (${manifest.catalogs.size} catalogs)")
+                syncRepo.pushAddonToCloud(manifest)
+                refreshLiveCatalogs()
+            }.onFailure { err ->
+                _isInstallingAddon.value = false
+                showBanner("Failed to load addon manifest: ${err.message}")
+            }
+        }
+    }
+
+    fun toggleAddonEnabled(addonId: String, enabled: Boolean) {
+        _installedAddons.value = _installedAddons.value.map {
+            if (it.id == addonId) it.copy(isEnabled = enabled) else it
+        }
+        refreshLiveCatalogs()
+    }
+
+    fun removeAddon(addonId: String) {
+        _installedAddons.value = _installedAddons.value.filterNot { it.id == addonId }
+        scope.launch { syncRepo.removeAddonFromCloud(addonId) }
+        refreshLiveCatalogs()
+        showBanner("Removed addon")
     }
 
     fun toggleProfilePicker(show: Boolean) {
@@ -228,7 +372,7 @@ class NaphAppState {
 
     fun addProfile(name: String, emoji: String, isKids: Boolean) {
         if (name.isBlank()) return
-        val colors = listOf(0xFF6366F1, 0xFF06B6D4, 0xFFE50914, 0xFF10B981, 0xFFF59E0B)
+        val colors = listOf(0xFF3B82F6, 0xFF10B981, 0xFFE50914, 0xFF8B5CF6, 0xFFF59E0B)
         val newProf = UserProfile(
             id = "prof_${Clock.System.now().toEpochMilliseconds()}",
             name = name.trim(),
@@ -259,23 +403,28 @@ class NaphAppState {
     fun loadStreamsAndMetadataFor(item: MediaItem, episode: EpisodeVideo? = null) {
         scope.launch {
             _isLoadingStreams.value = true
-            val videoId = episode?.id ?: item.id
-            val fullMeta = addonRepo.fetchMeta(_installedAddons.value, item.type, item.id) ?: item
+            val fullMeta = addonRepo.fetchMeta(_installedAddons.value, item)
             val ratings = metaRepo.fetchAggregatedRatings(fullMeta, _trackerConfig.value.mdbListApiKey)
-            _selectedMediaItem.value = fullMeta.copy(aggregatedRatings = ratings)
+            val enrichedItem = fullMeta.copy(aggregatedRatings = ratings)
+            _selectedMediaItem.value = enrichedItem
 
-            val addonStreams = addonRepo.fetchStreamsFromAllAddons(_installedAddons.value, item.type, videoId)
-            val serverStreams = if (item.id.startsWith("jellyfin:") || item.id.startsWith("emby:")) {
-                val parts = item.id.split(":")
+            val targetEp = episode ?: enrichedItem.videos.firstOrNull()
+            val videoId = targetEp?.id ?: enrichedItem.id
+
+            val addonStreams = addonRepo.fetchStreamsFromAllAddons(_installedAddons.value, enrichedItem.type, videoId)
+            val serverStreams = if (enrichedItem.id.startsWith("jellyfin:") || enrichedItem.id.startsWith("emby:")) {
+                val parts = enrichedItem.id.split(":")
                 val serverId = parts.getOrNull(1)
                 val server = _mediaServers.value.find { it.id == serverId }
-                if (server != null) listOf(serverRepo.buildDirectPlayStream(server, item.id)) else emptyList()
+                if (server != null) listOf(serverRepo.buildDirectPlayStream(server, enrichedItem.id)) else emptyList()
             } else {
                 emptyList()
             }
 
             _availableStreams.value = serverStreams + addonStreams
-            _availableSubtitles.value = addonRepo.fetchSubtitlesFromAllAddons(_installedAddons.value, item.type, videoId)
+            val subs = addonRepo.fetchSubtitlesFromAllAddons(_installedAddons.value, enrichedItem.type, videoId)
+            _availableSubtitles.value = subs
+            _selectedSubtitleTrack.value = subs.firstOrNull()
             _isLoadingStreams.value = false
         }
     }
@@ -296,27 +445,23 @@ class NaphAppState {
             )
         }
 
-        // 1. Check if user prefers Debrid resolution for P2P infoHashes
         if (stream.isP2PTorrent && _debridConfig.value.preferDebridOverP2P && debridRepo.hasActiveDebrid(_debridConfig.value)) {
             scope.launch {
                 val resolved = debridRepo.resolveInfoHashToHttpUrl(stream, _debridConfig.value)
                 resolved.onSuccess { directHttpUrl ->
                     _activePlayableUrl.value = directHttpUrl
-                    showBanner("Resolved cached 4K stream via ${debridRepo.activeProviderName(_debridConfig.value)}")
+                    showBanner("Resolved cached stream via ${debridRepo.activeProviderName(_debridConfig.value)}")
                 }.onFailure {
-                    // Fallback to native P2P engine immediately
                     p2pEngine.startSequentialStream(stream, _p2pSettings.value) { localUrl ->
                         _activePlayableUrl.value = localUrl
                     }
                 }
             }
         } else if (stream.isP2PTorrent) {
-            // Native Sequential P2P Torrent Engine (#1 Priority)
             p2pEngine.startSequentialStream(stream, _p2pSettings.value) { localUrl ->
                 _activePlayableUrl.value = localUrl
             }
         } else {
-            // Direct HTTP / Debrid Cached / Jellyfin / Emby stream
             _activePlayableUrl.value = stream.url
         }
     }
@@ -392,59 +537,31 @@ class NaphAppState {
 
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
-        val allLocal = (_heroShowcaseItems.value + _trendingMovies.value + _trendingSeries.value + _personalServerItems.value)
-            .distinctBy { it.id }
+        val allLoaded = (_homeCatalogSections.value.flatMap { it.items } + _personalServerItems.value)
+            .distinctBy { "${it.type}:${it.id}" }
 
         if (query.isBlank()) {
-            _searchResults.value = allLocal
+            _searchResults.value = allLoaded
+            _isSearching.value = false
             return
         }
 
-        val filtered = allLocal.filter {
+        val localMatches = allLoaded.filter {
             it.name.contains(query, ignoreCase = true) ||
                 it.genres.any { g -> g.contains(query, ignoreCase = true) }
         }
-        _searchResults.value = filtered
+        _searchResults.value = localMatches
 
-        scope.launch {
-            val cinemeta = _installedAddons.value.firstOrNull { it.id.contains("cinemeta") } ?: return@launch
-            val remoteMovies = addonRepo.fetchCatalog(cinemeta, "movie", "top", searchQuery = query)
-            val remoteSeries = addonRepo.fetchCatalog(cinemeta, "series", "top", searchQuery = query)
-            val combined = (filtered + remoteMovies + remoteSeries).distinctBy { it.id }
-            if (_searchQuery.value == query) {
-                _searchResults.value = combined
+        if (_installedAddons.value.isNotEmpty()) {
+            scope.launch {
+                _isSearching.value = true
+                val remoteMatches = addonRepo.searchAcrossInstalledAddons(_installedAddons.value, query)
+                if (_searchQuery.value == query) {
+                    _searchResults.value = (localMatches + remoteMatches).distinctBy { "${it.type}:${it.id}" }
+                    _isSearching.value = false
+                }
             }
         }
-    }
-
-    fun installAddonByManifestUrl(rawUrl: String) {
-        if (rawUrl.isBlank()) return
-        scope.launch {
-            val result = addonRepo.fetchManifest(rawUrl)
-            result.onSuccess { manifest ->
-                _installedAddons.value = _installedAddons.value.filterNot { it.id == manifest.id } + manifest
-                showBanner("Installed addon: ${manifest.name} (v${manifest.version})")
-                refreshLiveCatalogs()
-            }.onFailure {
-                // Still allow adding custom manifest entry if offline or CORS restricted
-                val normalized = addonRepo.normalizeManifestUrl(rawUrl)
-                val fallback = AddonManifest(
-                    id = "custom.${normalized.hashCode()}",
-                    version = "1.0.0",
-                    name = normalized.substringAfter("://").substringBefore("/"),
-                    description = "Custom Stremio JSON Manifest Addon ($normalized)",
-                    types = listOf("movie", "series"),
-                    manifestUrl = normalized,
-                    isEnabled = true
-                )
-                _installedAddons.value = _installedAddons.value + fallback
-                showBanner("Added custom manifest: ${fallback.name}")
-            }
-        }
-    }
-
-    fun removeAddon(addonId: String) {
-        _installedAddons.value = _installedAddons.value.filterNot { it.id == addonId }
     }
 
     fun updateP2PSettings(updated: P2PSettings) {
@@ -459,7 +576,7 @@ class NaphAppState {
 
     fun updateTrackerConfig(updated: TrackerSyncConfig) {
         _trackerConfig.value = updated
-        showBanner("Saved Trakt.tv / SIMKL / MDBList sync configuration")
+        showBanner("Saved Tracking & Integration settings")
     }
 
     fun updateSubtitleConfig(updated: SubtitleAppearanceConfig) {

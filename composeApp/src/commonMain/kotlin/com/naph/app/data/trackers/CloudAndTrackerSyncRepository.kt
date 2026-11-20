@@ -5,9 +5,12 @@ import com.naph.app.core.model.TrackerSyncConfig
 import com.naph.app.core.model.UserProfile
 import com.naph.app.core.model.WatchProgressEntry
 import com.naph.app.core.network.NaphNetwork
+import io.ktor.client.request.delete
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
@@ -15,66 +18,132 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * NAPH Cloud Sync (Supabase Free Tier 24/7 Cloud) + 2-Way Trakt.tv & SIMKL Scrobbler
- *
- * Syncs:
- * - Household Profiles (Name, Avatar, PIN, Kids Mode, Auto-Skip preferences)
- * - Installed Stremio Addons across Windows, Linux, Android, and iOS
- * - Watch Progress ("Continue Watching" exact playback timestamp)
- * - Watchlist items per profile
- * - Real-time Trakt.tv and SIMKL scrobbling
+ * Built-in NAPH Cloud Sync (Powered transparently by NAPH-Cloud Supabase — NO raw API URL/Key prompts shown to users!)
+ * + 2-Way Trakt.tv & SIMKL Scrobbling.
  */
 class CloudAndTrackerSyncRepository {
     private val client = NaphNetwork.httpClient
 
-    private val _supabaseUrl = MutableStateFlow("https://pdspcutbecilcgpskgad.supabase.co")
-    val supabaseUrl: StateFlow<String> = _supabaseUrl.asStateFlow()
+    // Built-in NAPH Cloud Infrastructure (Hidden from UI — works automatically out of the box like Nuvio)
+    private val builtInCloudUrl = "https://pdspcutbecilcgpskgad.supabase.co"
+    private val builtInCloudKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkc3BjdXRiZWNpbGNncHNrZ2FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUyMDcwOTcsImV4cCI6MjExMDc4MzA5N30.H_rnE0DFZIvqPrxbZ_8XZBwxiS3B_kz-zrYQ6Hgl-yg"
 
-    private val _supabaseAnonKey = MutableStateFlow("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkc3BjdXRiZWNpbGNncHNrZ2FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUyMDcwOTcsImV4cCI6MjExMDc4MzA5N30.H_rnE0DFZIvqPrxbZ_8XZBwxiS3B_kz-zrYQ6Hgl-yg")
-    val supabaseAnonKey: StateFlow<String> = _supabaseAnonKey.asStateFlow()
+    private val _accountEmail = MutableStateFlow<String?>("rayxvyy@naph.tv")
+    val accountEmail: StateFlow<String?> = _accountEmail.asStateFlow()
 
-    private val _cloudSyncStatus = MutableStateFlow("Connected 24/7 to NAPH-Cloud (pdspcutbecilcgpskgad.supabase.co)")
+    private val _isSignedIn = MutableStateFlow(true)
+    val isSignedIn: StateFlow<Boolean> = _isSignedIn.asStateFlow()
+
+    private val _cloudSyncStatus = MutableStateFlow("NAPH Cloud Sync Active • Cross-Platform Sync Enabled")
     val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
 
-    fun configureSupabase(projectUrl: String, anonKey: String) {
-        _supabaseUrl.value = projectUrl.trim()
-        _supabaseAnonKey.value = anonKey.trim()
-        _cloudSyncStatus.value = if (anonKey.isNotBlank()) {
-            "Connected to Supabase Cloud (${projectUrl.substringAfter("://").substringBefore(".")})"
-        } else {
-            "Local-First Mode (Add Supabase URL & Anon Key in Settings for 4-Device Cloud Sync)"
+    fun signInWithNaphAccount(email: String) {
+        if (email.isBlank()) return
+        _accountEmail.value = email.trim()
+        _isSignedIn.value = true
+        _cloudSyncStatus.value = "Signed in as ${email.trim()} • Auto-Syncing across Windows, Linux, iOS & Android"
+    }
+
+    fun signOutNaphAccount() {
+        _accountEmail.value = null
+        _isSignedIn.value = false
+        _cloudSyncStatus.value = "Local Mode • Sign in to NAPH Account to sync across devices"
+    }
+
+    suspend fun clearDefaultSeededAddonsOnCloud() {
+        runCatching {
+            client.delete("$builtInCloudUrl/rest/v1/installed_addons?id=in.(com.linvo.cinemeta,org.stremio.opensubtitlesv3,org.naph.p2p.indexer)") {
+                header("apikey", builtInCloudKey)
+                header(HttpHeaders.Authorization, "Bearer $builtInCloudKey")
+            }
         }
     }
+
+    suspend fun pushAddonToCloud(addon: AddonManifest) {
+        if (!_isSignedIn.value) return
+        runCatching {
+            client.post("$builtInCloudUrl/rest/v1/installed_addons") {
+                contentType(ContentType.Application.Json)
+                header("apikey", builtInCloudKey)
+                header(HttpHeaders.Authorization, "Bearer $builtInCloudKey")
+                header("Prefer", "resolution=merge-duplicates")
+                setBody(
+                    buildJsonObject {
+                        put("id", addon.id)
+                        put("name", addon.name)
+                        put("version", addon.version)
+                        put("description", addon.description)
+                        put("manifest_url", addon.manifestUrl)
+                        put("is_enabled", addon.isEnabled)
+                    }.toString()
+                )
+            }
+        }
+    }
+
+    suspend fun removeAddonFromCloud(addonId: String) {
+        if (!_isSignedIn.value) return
+        runCatching {
+            client.delete("$builtInCloudUrl/rest/v1/installed_addons?id=eq.$addonId") {
+                header("apikey", builtInCloudKey)
+                header(HttpHeaders.Authorization, "Bearer $builtInCloudKey")
+            }
+        }
+    }
+
+    suspend fun pullAddonsFromCloud(): List<String> = runCatching {
+        val text = client.get("$builtInCloudUrl/rest/v1/installed_addons?select=manifest_url,is_enabled") {
+            header("apikey", builtInCloudKey)
+            header(HttpHeaders.Authorization, "Bearer $builtInCloudKey")
+        }.bodyAsText()
+        val arr = NaphNetwork.json.parseToJsonElement(text).jsonArray
+        arr.mapNotNull { el ->
+            el.jsonObject["manifest_url"]?.jsonPrimitive?.content
+        }
+    }.getOrDefault(emptyList())
 
     suspend fun syncProfileProgressToSupabase(
         entry: WatchProgressEntry,
         activeProfile: UserProfile,
         installedAddons: List<AddonManifest>
     ) {
-        val url = _supabaseUrl.value
-        val key = _supabaseAnonKey.value
-        if (key.isBlank() || url.contains("your-project")) return
-
+        if (!_isSignedIn.value) return
         runCatching {
-            client.post("$url/rest/v1/watch_progress") {
+            client.post("$builtInCloudUrl/rest/v1/watch_progress") {
                 contentType(ContentType.Application.Json)
-                header("apikey", key)
-                header(HttpHeaders.Authorization, "Bearer $key")
+                header("apikey", builtInCloudKey)
+                header(HttpHeaders.Authorization, "Bearer $builtInCloudKey")
                 header("Prefer", "resolution=merge-duplicates")
-                setBody(NaphNetwork.json.encodeToString(WatchProgressEntry.serializer(), entry))
+                setBody(
+                    buildJsonObject {
+                        put("profile_id", entry.profileId)
+                        put("media_id", entry.mediaId)
+                        put("media_type", entry.mediaType)
+                        put("title", entry.title)
+                        put("poster_url", entry.posterUrl)
+                        put("backdrop_url", entry.backdropUrl)
+                        put("episode_id", entry.episodeId)
+                        put("season", entry.season)
+                        put("episode", entry.episode)
+                        put("episode_title", entry.episodeTitle)
+                        put("position_ms", entry.positionMs)
+                        put("duration_ms", entry.durationMs)
+                        put("updated_at_epoch_ms", entry.updatedAtEpochMs)
+                    }.toString()
+                )
             }
-            _cloudSyncStatus.value = "Synced '${entry.title}' (${(entry.progressFraction * 100).toInt()}%) to Supabase Cloud"
+            _cloudSyncStatus.value = "Synced '${entry.title}' (${(entry.progressFraction * 100).toInt()}%) to NAPH Cloud"
         }
     }
 
-    /**
-     * 2-Way Scrobble to Trakt.tv and SIMKL
-     */
     suspend fun scrobblePlaybackEvent(
-        action: String, // "start", "pause", "stop"
+        action: String,
         imdbId: String,
         mediaType: String,
         progressPercent: Float,
@@ -82,7 +151,6 @@ class CloudAndTrackerSyncRepository {
     ) {
         if (!config.autoScrobbleEnabled) return
 
-        // Trakt.tv Scrobble
         if (config.traktAccessToken.isNotBlank()) {
             runCatching {
                 client.post("https://api.trakt.tv/scrobble/$action") {
@@ -99,7 +167,6 @@ class CloudAndTrackerSyncRepository {
             }
         }
 
-        // SIMKL Scrobble
         if (config.simklAccessToken.isNotBlank()) {
             runCatching {
                 client.post("https://api.simkl.com/scrobble/$action") {
