@@ -3,8 +3,10 @@ package com.naph.app.ui.screens.player
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,8 +14,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -22,6 +26,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudQueue
@@ -50,7 +56,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,16 +76,18 @@ import com.naph.app.ui.components.ModernFilterPill
 import com.naph.app.ui.components.ModernGlassButton
 import com.naph.app.ui.components.ModernIconPill
 import com.naph.app.ui.components.ModernPrimaryButton
+import com.naph.app.ui.components.liquidGlassBorderBrush
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.theme.NaphColors
 import kotlin.math.roundToInt
 
 /**
- * Sleek Modern Minimalist Cinema Video Player (Apple TV+ / IINA / Netflix style):
- * - Ultra-slim 48dp top header bar with circular icon pills (no giant chunky text buttons!)
- * - Full-bleed native hardware `libmpv` video canvas
- * - Single-row 54dp bottom transport bar with circular Play/Pause, icon-only ±10s, integrated slim timeline scrubber,
- *   and compact subtitle / P2P speed pill.
+ * Nuvio-Inspired Liquid Glass Cinema Video Player (Responsive for Linux, Windows & iPhone):
+ * - Top safe-area Liquid Glass bar with title, resolution/P2P pill, Speed selector, Subtitles, Cast & External Player
+ * - Center full-bleed hardware video surface (`libmpv` 400MB cache on Linux/Windows, `AVPlayer` PiP on iOS)
+ * - Bottom safe-area Nuvio transport dock with thin timeline scrubber, elapsed/remaining time,
+ *   centered Liquid Glass transport pills (-10s, Play/Pause, +10s, Next Episode) & Volume mute toggle
+ * - Desktop keyboard shortcuts: Space (Play/Pause), Left/Right (±10s), Escape (Back)
  */
 @Composable
 fun UnifiedVideoPlayerScreen(
@@ -97,12 +113,24 @@ fun UnifiedVideoPlayerScreen(
     var durationMs by remember { mutableStateOf(0L) }
     var requestedSeekMs by remember { mutableStateOf<Long?>(null) }
 
+    val speedOptions = remember { listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f) }
+    var speedIndex by remember { mutableStateOf(1) } // 1.0x default
+    val playbackSpeed = speedOptions[speedIndex]
+
+    var isMuted by remember { mutableStateOf(false) }
+    val effectiveVolume = if (isMuted) 0f else 1f
+
     var showSubtitleDrawer by remember { mutableStateOf(false) }
     var showExternalPlayerModal by remember { mutableStateOf(false) }
     var showCastModal by remember { mutableStateOf(false) }
     var autoSkippedIds by remember { mutableStateOf(setOf<SkipSegmentType>()) }
 
-    // Automatic IntroDB / AniSkip Check when real position advances
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        runCatching { focusRequester.requestFocus() }
+    }
+
+    // Automatic IntroDB / AniSkip Check
     LaunchedEffect(positionMs) {
         val matchingSegment = skipSegments.find { positionMs in it.startMs..it.endMs }
         if (matchingSegment != null &&
@@ -129,23 +157,57 @@ fun UnifiedVideoPlayerScreen(
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    when (keyEvent.key) {
+                        Key.Spacebar -> {
+                            isPlaying = !isPlaying
+                            true
+                        }
+                        Key.DirectionLeft -> {
+                            val t = (positionMs - 10_000L).coerceAtLeast(0L)
+                            positionMs = t
+                            requestedSeekMs = t
+                            true
+                        }
+                        Key.DirectionRight -> {
+                            val t = if (durationMs > 0L) (positionMs + 10_000L).coerceAtMost(durationMs) else positionMs + 10_000L
+                            positionMs = t
+                            requestedSeekMs = t
+                            true
+                        }
+                        Key.Escape -> {
+                            appState.stopPlaybackAndSaveProgress(positionMs, durationMs)
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
     ) {
+        val isCompact = maxWidth < 640.dp
+
         Column(modifier = Modifier.fillMaxSize()) {
-            // 1. ULTRA-SLIM MODERN TOP BAR (48.dp height, zero chunky buttons)
+            // 1. NUVIO LIQUID GLASS TOP HEADER BAR (Safe-Area Aware for iPhone Dynamic Island & Desktop)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .background(Color(0xFF08090D))
-                    .padding(horizontal = 16.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0xFF0A0D14), Color(0xFF06070B))
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = if (isCompact) 12.dp else 18.dp, vertical = 10.dp)
             ) {
-                // Left: Circular Back Icon + Crisp Title & Compact Tech Tags
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
@@ -154,88 +216,67 @@ fun UnifiedVideoPlayerScreen(
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         onClick = { appState.stopPlaybackAndSaveProgress(positionMs, durationMs) },
-                        size = 32.dp
-                    )
-
-                    Spacer(Modifier.width(12.dp))
-
-                    Text(
-                        text = buildString {
-                            append(media.name)
-                            if (episode != null) {
-                                append("  •  S${episode!!.season}:E${episode!!.episode} ${episode!!.displayTitle}")
-                            }
-                        },
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        size = 34.dp
                     )
 
                     Spacer(Modifier.width(10.dp))
 
-                    // Subtle Quality Tag
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(Color.White.copy(alpha = 0.08f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = buildString {
-                                append(currentStream.detectedResolution)
-                                currentStream.detectedHdrBadge?.let { append(" • $it") }
-                                currentStream.detectedFileSizeLabel?.let { append(" • $it") }
-                            },
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = NaphColors.TextSecondary
+                            text = media.name,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = if (isCompact) 13.5.sp else 14.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val metaLine = buildString {
+                            if (episode != null) {
+                                append("S${episode!!.season}:E${episode!!.episode} • ")
+                            }
+                            append(currentStream.detectedResolution)
+                            currentStream.detectedFileSizeLabel?.let { append(" • $it") }
+                            p2pTelemetry?.let { tel ->
+                                append(" • ${formatBytesPerSec(tel.downloadSpeedBytesPerSec)} (${tel.connectedPeers}p)")
+                            }
+                        }
+                        Text(
+                            text = metaLine,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                            color = NaphColors.TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                // Right: Compact P2P Speed Pill + Icon-Only Action Pills (No bulky text buttons!)
+                Spacer(Modifier.width(8.dp))
+
+                // Right Liquid Glass Control Pills (Speed, Subtitles, Cast, External Player)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
-                    p2pTelemetry?.let { tel ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF121520))
-                                .border(1.dp, NaphColors.CyanGlow.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 9.dp, vertical = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CloudQueue,
-                                contentDescription = null,
-                                tint = NaphColors.CyanGlow,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(Modifier.width(5.dp))
-                            Text(
-                                text = "${formatBytesPerSec(tel.downloadSpeedBytesPerSec)} • ${tel.connectedPeers}p",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
-                                color = Color.White
-                            )
-                        }
-                    }
-
-                    if (activeSkipSegment != null) {
-                        ModernPrimaryButton(
-                            text = activeSkipSegment.type.label,
-                            icon = Icons.Default.SkipNext,
-                            height = 30.dp,
-                            containerColor = Color.White,
-                            contentColor = Color.Black,
-                            onClick = {
-                                positionMs = activeSkipSegment.endMs + 500L
-                                requestedSeekMs = positionMs
-                            }
+                    // Nuvio-style Playback Speed Pill
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .height(32.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xCC1A2030))
+                            .border(1.dp, liquidGlassBorderBrush(), RoundedCornerShape(16.dp))
+                            .clickable { speedIndex = (speedIndex + 1) % speedOptions.size }
+                            .padding(horizontal = 10.dp)
+                    ) {
+                        Text(
+                            text = "${playbackSpeed}x",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = if (playbackSpeed != 1.0f) NaphColors.CyanGlow else Color.White
                         )
                     }
 
@@ -247,24 +288,26 @@ fun UnifiedVideoPlayerScreen(
                         size = 32.dp
                     )
 
-                    ModernIconPill(
-                        icon = Icons.Default.Cast,
-                        contentDescription = "Cast / AirPlay",
-                        tint = NaphColors.CyanGlow,
-                        onClick = { showCastModal = true },
-                        size = 32.dp
-                    )
+                    if (!isCompact) {
+                        ModernIconPill(
+                            icon = Icons.Default.Cast,
+                            contentDescription = "Cast / AirPlay",
+                            tint = NaphColors.CyanGlow,
+                            onClick = { showCastModal = true },
+                            size = 32.dp
+                        )
+                    }
 
                     ModernIconPill(
                         icon = Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = "Open in External Player",
+                        contentDescription = "External Player",
                         onClick = { showExternalPlayerModal = true },
                         size = 32.dp
                     )
                 }
             }
 
-            // 2. CENTER VIDEO STAGE (Full-bleed Native libmpv / ExoPlayer / MPVKit Canvas)
+            // 2. CENTER FULL-BLEED HARDWARE VIDEO STAGE
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -277,6 +320,9 @@ fun UnifiedVideoPlayerScreen(
                         streamUrl = playableUrl!!,
                         isPlaying = isPlaying,
                         seekToMs = requestedSeekMs,
+                        playbackSpeed = playbackSpeed,
+                        volume = effectiveVolume,
+                        subtitleUrl = selectedSubtitle?.url,
                         subtitleDelayMs = subConfig.delayOffsetMs,
                         onPositionChanged = { pos, dur ->
                             positionMs = pos
@@ -285,15 +331,15 @@ fun UnifiedVideoPlayerScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    // Minimal Sleek P2P Buffering Pill (Lightweight & Non-Chunky)
+                    // Liquid Glass Buffering Pill
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier
-                            .width(320.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF0E1119))
-                            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                            .width(if (isCompact) 280.dp else 330.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xD9121622))
+                            .border(1.dp, liquidGlassBorderBrush(), RoundedCornerShape(16.dp))
                             .padding(horizontal = 22.dp, vertical = 18.dp)
                     ) {
                         Row(
@@ -306,7 +352,7 @@ fun UnifiedVideoPlayerScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = "Buffering P2P Stream...",
+                                text = "Starting Stream...",
                                 style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp),
                                 color = Color.White
                             )
@@ -320,7 +366,7 @@ fun UnifiedVideoPlayerScreen(
                             LinearProgressIndicator(
                                 progress = { (tel.bufferProgressPercent / 100f).coerceIn(0.05f, 1f) },
                                 color = NaphColors.CyanGlow,
-                                trackColor = Color.White.copy(alpha = 0.10f),
+                                trackColor = Color.White.copy(alpha = 0.12f),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(3.dp)
@@ -331,119 +377,163 @@ fun UnifiedVideoPlayerScreen(
                 }
             }
 
-            // 3. ULTRA-SLIM SINGLE-ROW BOTTOM TRANSPORT BAR (52.dp height — Sleek Circular Icons + Timeline)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            // 3. NUVIO LIQUID GLASS BOTTOM TRANSPORT DOCK (Safe-Area Aware for iPhone Home Indicator)
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
-                    .background(Color(0xFF08090D))
-                    .padding(horizontal = 16.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0xFF07090F), Color(0xFF0B0E17))
+                        )
+                    )
+                    .navigationBarsPadding()
+                    .padding(horizontal = if (isCompact) 14.dp else 20.dp, vertical = 8.dp)
             ) {
-                // Left: Compact Circular Transport Controls (Rewind 10s, Play/Pause, Forward 10s, Next Ep)
-                ModernIconPill(
-                    icon = Icons.Default.FastRewind,
-                    contentDescription = "-10s",
-                    size = 32.dp,
-                    onClick = {
-                        val target = (positionMs - 10_000L).coerceAtLeast(0L)
-                        positionMs = target
-                        requestedSeekMs = target
-                    }
-                )
-
-                // Sleek White Circular Play / Pause Button
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color.White)
-                        .clickable { isPlaying = !isPlaying }
-                ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = Color.Black,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                ModernIconPill(
-                    icon = Icons.Default.FastForward,
-                    contentDescription = "+10s",
-                    size = 32.dp,
-                    onClick = {
-                        val target = if (durationMs > 0L) (positionMs + 10_000L).coerceAtMost(durationMs) else positionMs + 10_000L
-                        positionMs = target
-                        requestedSeekMs = target
-                    }
-                )
-
-                if (hasNextEpisode) {
-                    ModernIconPill(
-                        icon = Icons.Default.SkipNext,
-                        contentDescription = "Next Episode",
-                        tint = NaphColors.CyanGlow,
-                        size = 32.dp,
-                        onClick = { appState.playNextEpisodeInQueue() }
-                    )
-                }
-
-                Spacer(Modifier.width(4.dp))
-
-                // Current Time
-                Text(
-                    text = formatDurationMs(positionMs),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 11.5.sp,
-                        fontFamily = FontFamily.Monospace
-                    ),
-                    color = Color.White
-                )
-
-                // Center: Slim Integrated Scrubber
-                Slider(
-                    value = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
-                    onValueChange = { frac ->
-                        if (durationMs > 0L) {
-                            val target = (frac * durationMs).toLong()
-                            positionMs = target
-                            requestedSeekMs = target
-                        }
-                    },
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color.White,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.18f)
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-
-                // Total Duration
-                Text(
-                    text = if (durationMs > 0L) formatDurationMs(durationMs) else "--:--",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 11.5.sp,
-                        fontFamily = FontFamily.Monospace
-                    ),
-                    color = NaphColors.TextSecondary
-                )
-
-                // Right: Compact Subtitle Pill
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(7.dp))
-                        .background(Color.White.copy(alpha = 0.06f))
-                        .clickable { showSubtitleDrawer = !showSubtitleDrawer }
-                        .padding(horizontal = 9.dp, vertical = 5.dp)
+                // Row 1: Ultra-Clean Timeline Scrubber + Elapsed / Remaining Timestamps
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "CC: ${selectedSubtitle?.lang?.uppercase() ?: "AUTO"}",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                        text = formatDurationMs(positionMs),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        color = Color.White
+                    )
+
+                    Slider(
+                        value = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
+                        onValueChange = { frac ->
+                            if (durationMs > 0L) {
+                                val target = (frac * durationMs).toLong()
+                                positionMs = target
+                                requestedSeekMs = target
+                            }
+                        },
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.18f)
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(28.dp)
+                    )
+
+                    val remainingMs = if (durationMs > positionMs) durationMs - positionMs else 0L
+                    Text(
+                        text = if (durationMs > 0L) "-${formatDurationMs(remainingMs)}" else "--:--",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        ),
                         color = NaphColors.TextSecondary
                     )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                // Row 2: Centered Nuvio Transport Controls + Left Volume + Right Skip / CC
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Left: Volume Mute Toggle
+                    ModernIconPill(
+                        icon = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = if (isMuted) "Unmute" else "Mute",
+                        tint = if (isMuted) NaphColors.CrimsonPlay else Color.White,
+                        size = 32.dp,
+                        onClick = { isMuted = !isMuted }
+                    )
+
+                    // Center: Rewind 10s, White Circular Play/Pause, Forward 10s, Next Episode
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        ModernIconPill(
+                            icon = Icons.Default.FastRewind,
+                            contentDescription = "-10s",
+                            size = 34.dp,
+                            onClick = {
+                                val target = (positionMs - 10_000L).coerceAtLeast(0L)
+                                positionMs = target
+                                requestedSeekMs = target
+                            }
+                        )
+
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                                .clickable { isPlaying = !isPlaying }
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = Color.Black,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        ModernIconPill(
+                            icon = Icons.Default.FastForward,
+                            contentDescription = "+10s",
+                            size = 34.dp,
+                            onClick = {
+                                val target = if (durationMs > 0L) (positionMs + 10_000L).coerceAtMost(durationMs) else positionMs + 10_000L
+                                positionMs = target
+                                requestedSeekMs = target
+                            }
+                        )
+
+                        if (hasNextEpisode) {
+                            ModernIconPill(
+                                icon = Icons.Default.SkipNext,
+                                contentDescription = "Next Episode",
+                                tint = NaphColors.CyanGlow,
+                                size = 34.dp,
+                                onClick = { appState.playNextEpisodeInQueue() }
+                            )
+                        }
+                    }
+
+                    // Right: Skip Intro pill (if active) or CC Badge
+                    if (activeSkipSegment != null) {
+                        ModernPrimaryButton(
+                            text = activeSkipSegment.type.label,
+                            icon = Icons.Default.SkipNext,
+                            height = 30.dp,
+                            containerColor = Color.White,
+                            contentColor = Color.Black,
+                            onClick = {
+                                positionMs = activeSkipSegment.endMs + 500L
+                                requestedSeekMs = positionMs
+                            }
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xCC1A2030))
+                                .border(1.dp, liquidGlassBorderBrush(), RoundedCornerShape(10.dp))
+                                .clickable { showSubtitleDrawer = !showSubtitleDrawer }
+                                .padding(horizontal = 9.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "CC: ${selectedSubtitle?.lang?.uppercase() ?: "AUTO"}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                                color = Color.White
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -471,7 +561,7 @@ fun UnifiedVideoPlayerScreen(
                     showExternalPlayerModal = false
                     appState.showBanner(
                         if (ok) "Launched $playerName"
-                        else "Stream URL: ${playableUrl ?: currentStream.url}"
+                        else "Stream URL copied / ready for $playerName"
                     )
                 }
             )
@@ -503,10 +593,12 @@ private fun LiveSubtitleEditorDrawer(
 ) {
     Column(
         modifier = modifier
-            .width(340.dp)
+            .width(320.dp)
             .fillMaxHeight()
-            .background(Color(0xF80D0F16))
-            .border(1.dp, Color.White.copy(alpha = 0.10f))
+            .background(Color(0xF50E121D))
+            .border(1.dp, liquidGlassBorderBrush(), RoundedCornerShape(0.dp))
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(18.dp)
             .verticalScroll(rememberScrollState())
     ) {
@@ -520,7 +612,7 @@ private fun LiveSubtitleEditorDrawer(
                 icon = Icons.Default.Close,
                 contentDescription = "Close",
                 onClick = onClose,
-                size = 28.dp
+                size = 30.dp
             )
         }
 
@@ -543,10 +635,10 @@ private fun LiveSubtitleEditorDrawer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 3.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (selectedTrack?.id == track.id) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else Color(0xFF141722))
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (selectedTrack?.id == track.id) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else Color(0xFF151926))
                     .clickable { onSelectTrack(track) }
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = 9.dp)
             ) {
                 Text(track.label, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp), color = Color.White)
                 Text(track.format.uppercase(), style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = NaphColors.CyanGlow)
@@ -558,9 +650,9 @@ private fun LiveSubtitleEditorDrawer(
         Text("DELAY SYNC (${config.delayOffsetMs} ms)", style = MaterialTheme.typography.labelSmall, color = NaphColors.CyanGlow)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ModernGlassButton(text = "-100ms", height = 30.dp, onClick = { onUpdateConfig(config.copy(delayOffsetMs = config.delayOffsetMs - 100L)) })
-            ModernGlassButton(text = "0ms", height = 30.dp, onClick = { onUpdateConfig(config.copy(delayOffsetMs = 0L)) })
-            ModernGlassButton(text = "+100ms", height = 30.dp, onClick = { onUpdateConfig(config.copy(delayOffsetMs = config.delayOffsetMs + 100L)) })
+            ModernGlassButton(text = "-100ms", height = 32.dp, onClick = { onUpdateConfig(config.copy(delayOffsetMs = config.delayOffsetMs - 100L)) })
+            ModernGlassButton(text = "0ms", height = 32.dp, onClick = { onUpdateConfig(config.copy(delayOffsetMs = 0L)) })
+            ModernGlassButton(text = "+100ms", height = 32.dp, onClick = { onUpdateConfig(config.copy(delayOffsetMs = config.delayOffsetMs + 100L)) })
         }
 
         Spacer(Modifier.height(16.dp))
@@ -608,10 +700,10 @@ private fun ExternalPlayerHandoffDialog(
         Column(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
-                .width(360.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFF10131C))
-                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+                .width(340.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0xEB121622))
+                .border(1.dp, liquidGlassBorderBrush(), RoundedCornerShape(18.dp))
                 .padding(20.dp)
         ) {
             Text("External Player", style = MaterialTheme.typography.titleMedium, color = Color.White)
@@ -621,13 +713,15 @@ private fun ExternalPlayerHandoffDialog(
                 color = NaphColors.TextSecondary
             )
 
-            listOf("mpv", "VLC Media Player", "IINA (macOS)", "Infuse (iOS)", "Outplayer (iOS)").forEach { player ->
+            listOf("mpv", "VLC Media Player", "Infuse (iOS)", "Outplayer (iOS)", "IINA (macOS)").forEach { player ->
                 ModernGlassButton(
                     text = player,
                     onClick = {
                         val bin = when {
                             player.startsWith("mpv") -> "mpv"
                             player.startsWith("VLC") -> "vlc"
+                            player.startsWith("Infuse") -> "Infuse"
+                            player.startsWith("Outplayer") -> "Outplayer"
                             player.startsWith("IINA") -> "iina"
                             else -> "mpv"
                         }
@@ -657,10 +751,10 @@ private fun CastAndAirPlayDialog(
         Column(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
-                .width(360.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFF10131C))
-                .border(1.dp, NaphColors.CyanGlow.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                .width(340.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0xEB121622))
+                .border(1.dp, liquidGlassBorderBrush(NaphColors.CyanGlow), RoundedCornerShape(18.dp))
                 .padding(20.dp)
         ) {
             Text("Cast & AirPlay", style = MaterialTheme.typography.titleMedium, color = Color.White)

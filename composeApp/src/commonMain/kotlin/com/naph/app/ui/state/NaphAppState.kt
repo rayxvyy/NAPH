@@ -28,6 +28,9 @@ import com.naph.app.ui.theme.NaphThemePreset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -347,9 +350,87 @@ class NaphAppState {
         }
     }
 
+    fun createAccountAndSync(username: String, email: String, password: String) {
+        scope.launch {
+            val res = syncRepo.createNaphAccount(username, email, password)
+            res.onSuccess { user ->
+                // Push any existing local addons & profiles to this new cloud account
+                _installedAddons.value.forEach { syncRepo.pushAddonToCloud(it) }
+                _profiles.value.forEach { syncRepo.pushProfileToCloud(it) }
+                showBanner("Created account '$user' & synced ${_installedAddons.value.size} addons to cloud")
+            }.onFailure { err ->
+                showBanner(err.message ?: "Could not create account")
+            }
+        }
+    }
+
+    fun signInAndSync(email: String, password: String) {
+        scope.launch {
+            val res = syncRepo.signInWithNaphAccount(email, password)
+            res.onSuccess { user ->
+                showBanner("Signed in as $user • Syncing addons & profiles...")
+                syncCloudNow()
+            }.onFailure { err ->
+                showBanner(err.message ?: "Sign in failed")
+            }
+        }
+    }
+
+    fun syncCloudNow() {
+        scope.launch {
+            val email = syncRepo.accountEmail.value ?: return@launch
+            // 1. Pull addons from cloud for this account_email
+            val cloudAddons = syncRepo.pullAddonsFromCloud(email)
+            if (cloudAddons.isNotEmpty()) {
+                val fetched = coroutineScope {
+                    cloudAddons.map { rec ->
+                        async {
+                            addonRepo.fetchManifest(rec.manifestUrl).getOrNull()?.copy(isEnabled = rec.isEnabled)
+                        }
+                    }.awaitAll().filterNotNull()
+                }
+                if (fetched.isNotEmpty()) {
+                    val merged = (_installedAddons.value + fetched).distinctBy { it.manifestUrl }
+                    _installedAddons.value = merged
+                    refreshLiveCatalogs()
+                }
+            }
+
+            // 2. Push any local addons that aren't in the cloud yet
+            val cloudUrls = cloudAddons.map { it.manifestUrl }.toSet()
+            _installedAddons.value.filterNot { it.manifestUrl in cloudUrls }.forEach {
+                syncRepo.pushAddonToCloud(it)
+            }
+
+            // 3. Pull profiles from cloud
+            val cloudProfiles = syncRepo.pullProfilesFromCloud(email)
+            if (cloudProfiles.isNotEmpty()) {
+                _profiles.value = cloudProfiles
+                if (cloudProfiles.none { it.id == _activeProfile.value.id }) {
+                    _activeProfile.value = cloudProfiles.first()
+                }
+            } else {
+                _profiles.value.forEach { syncRepo.pushProfileToCloud(it) }
+            }
+
+            // 4. Pull watch progress from cloud
+            val cloudProgress = syncRepo.pullWatchProgressFromCloud(email)
+            if (cloudProgress.isNotEmpty()) {
+                _watchProgressByProfile.value = cloudProgress.groupBy { it.profileId }
+            }
+
+            showBanner("Cloud Sync Complete • ${_installedAddons.value.size} addons synced")
+        }
+    }
+
     fun toggleAddonEnabled(addonId: String, enabled: Boolean) {
-        _installedAddons.value = _installedAddons.value.map {
+        val updatedList = _installedAddons.value.map {
             if (it.id == addonId) it.copy(isEnabled = enabled) else it
+        }
+        _installedAddons.value = updatedList
+        val target = updatedList.find { it.id == addonId }
+        if (target != null) {
+            scope.launch { syncRepo.pushAddonToCloud(target) }
         }
         refreshLiveCatalogs()
     }
@@ -384,6 +465,7 @@ class NaphAppState {
         _profiles.value = _profiles.value + newProf
         _activeProfile.value = newProf
         _showProfilePicker.value = false
+        scope.launch { syncRepo.pushProfileToCloud(newProf) }
         showBanner("Created profile '${newProf.name}'")
     }
 
@@ -392,6 +474,7 @@ class NaphAppState {
         val remaining = _profiles.value.filterNot { it.id == profileId }
         _watchlistByProfile.value = _watchlistByProfile.value - profileId
         _watchProgressByProfile.value = _watchProgressByProfile.value - profileId
+        scope.launch { syncRepo.deleteProfileFromCloud(profileId) }
 
         if (remaining.isEmpty()) {
             val freshDefault = UserProfile(

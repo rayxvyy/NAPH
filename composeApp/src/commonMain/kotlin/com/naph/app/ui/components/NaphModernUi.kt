@@ -6,9 +6,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,15 +49,15 @@ import com.naph.app.ui.theme.NaphColors
 
 /**
  * Hardware-friendly downsampled network image loader:
- * - Decodes posters at compact thumbnail pixel dimensions (e.g. 260x390 instead of 2000x3000)
+ * - Decodes posters at compact thumbnail pixel dimensions (e.g. 240x360 instead of 2000x3000)
  * - Caches decoded bitmaps in memory & disk so scrolling LazyColumn / LazyRow is 60-120 FPS instant.
  */
 @Composable
 fun FastNetworkImage(
     url: String?,
     contentDescription: String?,
-    widthPx: Int = 260,
-    heightPx: Int = 390,
+    widthPx: Int = 240,
+    heightPx: Int = 360,
     contentScale: ContentScale = ContentScale.Crop,
     modifier: Modifier = Modifier
 ) {
@@ -78,8 +82,143 @@ fun FastNetworkImage(
 }
 
 /**
+ * Apple Liquid Glass Specular Rim Brush (top-edge glass refraction sheen)
+ */
+fun liquidGlassBorderBrush(accentColor: Color? = null): Brush = Brush.verticalGradient(
+    colors = if (accentColor != null) {
+        listOf(
+            accentColor.copy(alpha = 0.65f),
+            accentColor.copy(alpha = 0.22f),
+            accentColor.copy(alpha = 0.40f)
+        )
+    } else {
+        listOf(
+            Color.White.copy(alpha = 0.26f),
+            Color.White.copy(alpha = 0.06f),
+            Color.White.copy(alpha = 0.14f)
+        )
+    }
+)
+
+fun liquidGlassFillBrush(): Brush = Brush.verticalGradient(
+    colors = listOf(
+        Color(0xD6171C2A),
+        Color(0xCC0D1018)
+    )
+)
+
+/**
+ * Liquid Glass Card Container (Translucent Frosted Surface + Specular Refraction Rim)
+ */
+@Composable
+fun LiquidGlassCard(
+    cornerRadius: Dp = 18.dp,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(liquidGlassFillBrush())
+            .border(1.dp, liquidGlassBorderBrush(), shape),
+        content = content
+    )
+}
+
+/**
+ * Apple iOS Liquid Glass Floating Capsule Navigation Bar
+ * Floats cleanly above the iPhone home indicator with specular top refraction & luminous active pill.
+ */
+@Composable
+fun <T> LiquidGlassFloatingNavBar(
+    items: List<T>,
+    selectedItem: T,
+    labelOf: (T) -> String,
+    iconOf: (T) -> ImageVector,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val capsuleShape = RoundedCornerShape(28.dp)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 18.dp, vertical = 10.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(62.dp)
+                .clip(capsuleShape)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xEB1A2030),
+                            Color(0xE00C0F18)
+                        )
+                    )
+                )
+                .border(1.dp, liquidGlassBorderBrush(), capsuleShape)
+                .padding(horizontal = 6.dp, vertical = 5.dp)
+        ) {
+            items.forEach { item ->
+                val isSelected = item == selectedItem
+                val pillShape = RoundedCornerShape(22.dp)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .clip(pillShape)
+                        .background(
+                            if (isSelected) {
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.22f),
+                                        Color.White.copy(alpha = 0.09f)
+                                    )
+                                )
+                            } else {
+                                Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+                            }
+                        )
+                        .border(
+                            width = if (isSelected) 0.8.dp else 0.dp,
+                            color = if (isSelected) Color.White.copy(alpha = 0.25f) else Color.Transparent,
+                            shape = pillShape
+                        )
+                        .clickable { onSelect(item) }
+                ) {
+                    Icon(
+                        imageVector = iconOf(item),
+                        contentDescription = labelOf(item),
+                        tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.58f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = labelOf(item),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                        ),
+                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.58f),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * Custom Modern NAPH Cinema Prism App Icon (Vector Canvas)
- * Replaces the old plain "N" square with a sleek dark obsidian squircle + glowing cyan-to-violet cinema play prism.
  */
 @Composable
 fun NaphBrandIcon(
@@ -91,7 +230,6 @@ fun NaphBrandIcon(
         val h = this.size.height
         val corner = CornerRadius(w * 0.28f, h * 0.28f)
 
-        // 1. Deep Obsidian Base Squircle
         drawRoundRect(
             brush = Brush.linearGradient(
                 colors = listOf(Color(0xFF0F1322), Color(0xFF070910)),
@@ -101,7 +239,6 @@ fun NaphBrandIcon(
             cornerRadius = corner
         )
 
-        // 2. Ambient Cyan/Indigo Radial Glow inside Squircle
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(Color(0x5538BDF8), Color(0x226366F1), Color.Transparent),
@@ -110,7 +247,6 @@ fun NaphBrandIcon(
             )
         )
 
-        // 3. Glowing Gradient Outer Rim
         drawRoundRect(
             brush = Brush.linearGradient(
                 colors = listOf(Color(0xFF38BDF8), Color(0xFF6366F1), Color(0xFFA855F7)),
@@ -121,7 +257,6 @@ fun NaphBrandIcon(
             style = Stroke(width = w * 0.055f)
         )
 
-        // 4. Stylized N + Play Prism Emblem
         val prismPath = Path().apply {
             moveTo(w * 0.30f, h * 0.74f)
             lineTo(w * 0.30f, h * 0.26f)
@@ -137,7 +272,6 @@ fun NaphBrandIcon(
             )
         )
 
-        // 5. Crisp White N-Wing Accent Stroke
         val accentPath = Path().apply {
             moveTo(w * 0.28f, h * 0.74f)
             lineTo(w * 0.28f, h * 0.26f)
@@ -157,7 +291,7 @@ fun NaphBrandIcon(
 }
 
 /**
- * Sleek Modern Primary Action Pill (Apple TV / Linear style — compact, crisp, zero chunkiness)
+ * Sleek Modern Primary Action Pill
  */
 @Composable
 fun ModernPrimaryButton(
@@ -166,18 +300,19 @@ fun ModernPrimaryButton(
     icon: ImageVector? = null,
     containerColor: Color = MaterialTheme.colorScheme.primary,
     contentColor: Color = Color.White,
-    height: Dp = 36.dp,
+    height: Dp = 38.dp,
     modifier: Modifier = Modifier
 ) {
+    val shape = RoundedCornerShape(12.dp)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
         modifier = modifier
             .height(height)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(shape)
             .background(containerColor)
             .clickable { onClick() }
-            .padding(horizontal = 15.dp)
+            .padding(horizontal = 16.dp)
     ) {
         if (icon != null) {
             Icon(
@@ -201,7 +336,7 @@ fun ModernPrimaryButton(
 }
 
 /**
- * Sleek Translucent Dark Glass Pill Button (Replaces old chunky OutlinedButton)
+ * Apple Liquid Glass Pill Button (Translucent Frosted Glass + Specular Refraction Rim)
  */
 @Composable
 fun ModernGlassButton(
@@ -211,28 +346,35 @@ fun ModernGlassButton(
     iconTint: Color = Color.White,
     textColor: Color = Color.White,
     isActive: Boolean = false,
-    height: Dp = 36.dp,
+    height: Dp = 38.dp,
     modifier: Modifier = Modifier
 ) {
-    val bgColor = if (isActive) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+    val shape = RoundedCornerShape(12.dp)
+    val bgBrush = if (isActive) {
+        Brush.verticalGradient(
+            colors = listOf(
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            )
+        )
     } else {
-        Color(0xFF141722)
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xD91D2333),
+                Color(0xCC111520)
+            )
+        )
     }
-    val borderColor = if (isActive) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
-    } else {
-        Color.White.copy(alpha = 0.10f)
-    }
+    val borderBrush = liquidGlassBorderBrush(if (isActive) MaterialTheme.colorScheme.primary else null)
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
         modifier = modifier
             .height(height)
-            .clip(RoundedCornerShape(10.dp))
-            .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(10.dp))
+            .clip(shape)
+            .background(bgBrush)
+            .border(1.dp, borderBrush, shape)
             .clickable { onClick() }
             .padding(horizontal = 14.dp)
     ) {
@@ -258,7 +400,7 @@ fun ModernGlassButton(
 }
 
 /**
- * Compact Circular / Squircle Icon Button for Media Player & Toolbars
+ * Liquid Glass Circular / Squircle Icon Pill for Media Player & Toolbars
  */
 @Composable
 fun ModernIconPill(
@@ -267,22 +409,30 @@ fun ModernIconPill(
     onClick: () -> Unit,
     tint: Color = Color.White,
     isActive: Boolean = false,
-    size: Dp = 34.dp,
+    size: Dp = 36.dp,
     isCircle: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    val shape = if (isCircle) CircleShape else RoundedCornerShape(9.dp)
-    val bg = if (isActive) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f)
+    val shape = if (isCircle) CircleShape else RoundedCornerShape(10.dp)
+    val bgBrush = if (isActive) {
+        Brush.verticalGradient(
+            listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(Color(0xCC22283A), Color(0xB8111520))
+        )
+    }
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .size(size)
             .clip(shape)
-            .background(bg)
+            .background(bgBrush)
             .border(
                 width = 1.dp,
-                color = if (isActive) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f),
+                color = if (isActive) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.18f),
                 shape = shape
             )
             .clickable { onClick() }
@@ -291,13 +441,13 @@ fun ModernIconPill(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = tint,
-            modifier = Modifier.size(size * 0.50f)
+            modifier = Modifier.size(size * 0.48f)
         )
     }
 }
 
 /**
- * Low-profile Modern Filter Pill (Replaces bulky Material3 FilterChip)
+ * Low-profile Liquid Glass Filter Pill
  */
 @Composable
 fun ModernFilterPill(
@@ -306,27 +456,29 @@ fun ModernFilterPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary else Color(0xFF131620)
-    val border = if (selected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.09f)
+    val shape = RoundedCornerShape(10.dp)
+    val bg = if (selected) MaterialTheme.colorScheme.primary else Color(0xCC161B28)
+    val borderBrush = liquidGlassBorderBrush(if (selected) MaterialTheme.colorScheme.primary else null)
     val textColor = if (selected) Color.White else NaphColors.TextSecondary
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .height(30.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .height(32.dp)
+            .clip(shape)
             .background(bg)
-            .border(1.dp, border, RoundedCornerShape(8.dp))
+            .border(1.dp, borderBrush, shape)
             .clickable { onClick() }
-            .padding(horizontal = 12.dp)
+            .padding(horizontal = 13.dp)
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 11.5.sp,
+                fontSize = 12.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
             ),
-            color = textColor
+            color = textColor,
+            maxLines = 1
         )
     }
 }

@@ -55,6 +55,9 @@ actual fun NativeVideoSurface(
     streamUrl: String,
     isPlaying: Boolean,
     seekToMs: Long?,
+    playbackSpeed: Float,
+    volume: Float,
+    subtitleUrl: String?,
     subtitleDelayMs: Long,
     onPositionChanged: (positionMs: Long, durationMs: Long) -> Unit,
     modifier: Modifier
@@ -66,6 +69,7 @@ actual fun NativeVideoSurface(
             AVPlayerViewController().apply {
                 this.player = avPlayer
                 this.showsPlaybackControls = false
+                this.allowsPictureInPicturePlayback = true
                 this.view.backgroundColor = UIColor.blackColor
             }
         } else null
@@ -90,13 +94,23 @@ actual fun NativeVideoSurface(
         }
     }
 
-    // Sync Play / Pause
-    LaunchedEffect(isPlaying) {
+    // Sync Play / Pause & Playback Speed
+    LaunchedEffect(isPlaying, playbackSpeed) {
         if (mpvController != null) {
             mpvController.setPlaying(isPlaying)
         } else {
-            if (isPlaying) avPlayer?.play() else avPlayer?.pause()
+            if (isPlaying) {
+                avPlayer?.play()
+                avPlayer?.rate = playbackSpeed
+            } else {
+                avPlayer?.pause()
+            }
         }
+    }
+
+    // Sync Volume
+    LaunchedEffect(volume) {
+        avPlayer?.volume = volume.coerceIn(0f, 1f)
     }
 
     // Sync Seek

@@ -107,6 +107,9 @@ actual fun NativeVideoSurface(
     streamUrl: String,
     isPlaying: Boolean,
     seekToMs: Long?,
+    playbackSpeed: Float,
+    volume: Float,
+    subtitleUrl: String?,
     subtitleDelayMs: Long,
     onPositionChanged: (positionMs: Long, durationMs: Long) -> Unit,
     modifier: Modifier
@@ -172,9 +175,14 @@ actual fun NativeVideoSurface(
                 if (gpuCtx != "auto") {
                     mpv.mpv_set_option_string(ctx, "gpu-context", gpuCtx)
                 }
-                mpv.mpv_set_option_string(ctx, "hwdec", "auto")
+                mpv.mpv_set_option_string(ctx, "hwdec", "auto-safe")
                 mpv.mpv_set_option_string(ctx, "vd-lavc-software-fallback", "yes")
                 mpv.mpv_set_option_string(ctx, "force-seekable", "yes")
+                // Nuvio-grade streaming & buffering tuning for smooth 4K/P2P playback
+                mpv.mpv_set_option_string(ctx, "cache", "yes")
+                mpv.mpv_set_option_string(ctx, "demuxer-max-bytes", "400M")
+                mpv.mpv_set_option_string(ctx, "demuxer-readahead-secs", "60")
+                mpv.mpv_set_option_string(ctx, "video-sync", "display-resample")
 
                 if (mpv.mpv_initialize(ctx) >= 0) {
                     initializedCtx = ctx
@@ -219,6 +227,34 @@ actual fun NativeVideoSurface(
         withContext(Dispatchers.IO) {
             val sec = (subtitleDelayMs.toDouble() / 1000.0).toString()
             mpv.mpv_set_property_string(ctx, "sub-delay", sec)
+        }
+    }
+
+    // Sync Playback Speed
+    LaunchedEffect(playbackSpeed, mpvHandle) {
+        val ctx = mpvHandle ?: return@LaunchedEffect
+        val mpv = LibMpvJna.instance ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            mpv.mpv_set_property_string(ctx, "speed", playbackSpeed.toString())
+        }
+    }
+
+    // Sync Volume (0..100)
+    LaunchedEffect(volume, mpvHandle) {
+        val ctx = mpvHandle ?: return@LaunchedEffect
+        val mpv = LibMpvJna.instance ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            mpv.mpv_set_property_string(ctx, "volume", (volume * 100f).toInt().coerceIn(0, 100).toString())
+        }
+    }
+
+    // Load external subtitle URL from Stremio addons when selected
+    LaunchedEffect(subtitleUrl, mpvHandle) {
+        val sub = subtitleUrl?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val ctx = mpvHandle ?: return@LaunchedEffect
+        val mpv = LibMpvJna.instance ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            mpv.mpv_command(ctx, arrayOf("sub-add", sub, "select", null))
         }
     }
 

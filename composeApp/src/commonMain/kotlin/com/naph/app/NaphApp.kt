@@ -58,7 +58,9 @@ import coil3.compose.setSingletonImageLoaderFactory
 import coil3.memory.MemoryCache
 import coil3.request.crossfade
 import com.naph.app.core.model.SidebarBehaviorMode
+import com.naph.app.ui.components.LiquidGlassFloatingNavBar
 import com.naph.app.ui.components.NaphBrandIcon
+import com.naph.app.ui.components.liquidGlassBorderBrush
 import com.naph.app.ui.screens.details.MediaDetailScreen
 import com.naph.app.ui.screens.home.HomeScreen
 import com.naph.app.ui.screens.library.LibraryAndServersScreen
@@ -147,19 +149,14 @@ fun NaphApp() {
                         }
 
                         if (!isDesktopOrWide && selectedMediaItem == null) {
-                            NavigationBar(
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                            LiquidGlassFloatingNavBar(
+                                items = NaphTab.entries,
+                                selectedItem = currentTab,
+                                labelOf = { it.label },
+                                iconOf = { iconForTab(it) },
+                                onSelect = { appState.selectTab(it) },
                                 modifier = Modifier.align(Alignment.BottomCenter)
-                            ) {
-                                NaphTab.entries.forEach { tab ->
-                                    NavigationBarItem(
-                                        selected = currentTab == tab,
-                                        onClick = { appState.selectTab(tab) },
-                                        icon = { Icon(iconForTab(tab), contentDescription = tab.label) },
-                                        label = { Text(tab.label, fontSize = 11.sp) }
-                                    )
-                                }
-                            }
+                            )
                         }
                     }
                 }
@@ -170,17 +167,23 @@ fun NaphApp() {
             }
 
             bannerMessage?.let { msg ->
+                val bannerShape = RoundedCornerShape(14.dp)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(20.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF121520))
-                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                        .align(if (isDesktopOrWide) Alignment.BottomEnd else Alignment.TopCenter)
+                        .padding(
+                            top = if (isDesktopOrWide) 0.dp else 56.dp,
+                            bottom = if (isDesktopOrWide) 20.dp else 0.dp,
+                            start = 16.dp,
+                            end = 16.dp
+                        )
+                        .clip(bannerShape)
+                        .background(Color(0xEB151A28))
+                        .border(1.dp, liquidGlassBorderBrush(MaterialTheme.colorScheme.primary), bannerShape)
                         .clickable { appState.dismissBanner() }
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.CloudQueue,

@@ -25,6 +25,9 @@ actual fun NativeVideoSurface(
     streamUrl: String,
     isPlaying: Boolean,
     seekToMs: Long?,
+    playbackSpeed: Float,
+    volume: Float,
+    subtitleUrl: String?,
     subtitleDelayMs: Long,
     onPositionChanged: (positionMs: Long, durationMs: Long) -> Unit,
     modifier: Modifier
@@ -40,6 +43,14 @@ actual fun NativeVideoSurface(
 
     LaunchedEffect(isPlaying) {
         exoPlayer.playWhenReady = isPlaying
+    }
+
+    LaunchedEffect(playbackSpeed) {
+        exoPlayer.setPlaybackSpeed(playbackSpeed)
+    }
+
+    LaunchedEffect(volume) {
+        exoPlayer.volume = volume.coerceIn(0f, 1f)
     }
 
     LaunchedEffect(seekToMs) {

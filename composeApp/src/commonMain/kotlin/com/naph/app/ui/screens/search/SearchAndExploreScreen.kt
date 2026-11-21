@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -64,7 +65,8 @@ fun SearchAndExploreScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 24.dp, vertical = 20.dp)
+            .statusBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
         Text("Search & Discover", style = MaterialTheme.typography.headlineLarge.copy(fontSize = 22.sp), color = Color.White)
         Text(

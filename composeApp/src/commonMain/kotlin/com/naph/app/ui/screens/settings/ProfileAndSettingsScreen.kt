@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,10 +16,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -72,10 +76,13 @@ import androidx.compose.ui.unit.sp
 import com.naph.app.core.model.PosterCardSizePreset
 import com.naph.app.core.model.ServerType
 import com.naph.app.core.model.SidebarBehaviorMode
+import com.naph.app.ui.components.LiquidGlassCard
 import com.naph.app.ui.components.ModernFilterPill
 import com.naph.app.ui.components.ModernGlassButton
 import com.naph.app.ui.components.ModernIconPill
 import com.naph.app.ui.components.ModernPrimaryButton
+import com.naph.app.ui.components.liquidGlassBorderBrush
+import com.naph.app.ui.components.liquidGlassFillBrush
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.state.ProfileSettingsPage
 import com.naph.app.ui.theme.NaphColors
@@ -105,36 +112,31 @@ fun ProfileAndSettingsScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Sub-page top bar with Back button when drilled into a specific section
+        // Sub-page top bar with Back button when drilled into a specific section (Safe-area aware for iPhone!)
         if (currentPage != ProfileSettingsPage.ROOT) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .background(Color(0xFF0A0D15))
+                    .statusBarsPadding()
+                    .padding(horizontal = 18.dp, vertical = 12.dp)
             ) {
-                IconButton(
+                ModernIconPill(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
                     onClick = { appState.navigateSettingsBack() },
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-                Spacer(Modifier.width(16.dp))
+                    size = 36.dp
+                )
+                Spacer(Modifier.width(12.dp))
                 Text(
                     text = currentPage.title,
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = Color.White
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp),
+                    color = Color.White,
+                    maxLines = 1
                 )
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
         }
 
         // Render Either Root Menu or Dedicated Sub-Page
@@ -167,69 +169,75 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
     val servers by appState.mediaServers.collectAsState()
     val selectedTheme by appState.selectedThemePreset.collectAsState()
 
-    LazyColumn(
-        contentPadding = PaddingValues(horizontal = 28.dp, vertical = 22.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-        modifier = Modifier.fillMaxSize()
-    ) {
-        // Active Profile Header Banner
-        item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF10131C))
-                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
-                    .padding(18.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(activeProfile.avatarColorHex).copy(alpha = 0.22f))
-                            .border(1.5.dp, Color(activeProfile.avatarColorHex), RoundedCornerShape(14.dp))
-                    ) {
-                        Text(activeProfile.avatarEmoji, fontSize = 26.sp)
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column {
-                        Text(
-                            text = activeProfile.name,
-                            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 20.sp),
-                            color = Color.White
-                        )
-                        Text(
-                            text = if (isSignedIn) "Cloud Sync Active • ${accountUsername ?: accountEmail.orEmpty()}"
-                            else "Local Profile • Create an account or sign in to sync across devices",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
-                            color = if (isSignedIn) NaphColors.EmeraldSeed else NaphColors.TextSecondary
-                        )
-                    }
-                }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isCompact = maxWidth < 600.dp
+        val hPad = if (isCompact) 16.dp else 28.dp
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ModernGlassButton(
-                        text = "Switch / Add Profile (${profiles.size})",
-                        icon = Icons.Default.People,
-                        onClick = { appState.toggleProfilePicker(true) }
-                    )
-                    ModernGlassButton(
-                        text = "Delete Profile",
-                        icon = Icons.Default.Delete,
-                        iconTint = NaphColors.CrimsonPlay,
-                        textColor = NaphColors.CrimsonPlay,
-                        onClick = { appState.deleteProfile(activeProfile.id) }
-                    )
+        Column(
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .statusBarsPadding()
+                .padding(start = hPad, end = hPad, top = 16.dp, bottom = 120.dp)
+        ) {
+            // Active Profile Header Banner (Liquid Glass + Responsive Stack on iPhone!)
+            LiquidGlassCard(cornerRadius = 18.dp) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.padding(18.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(activeProfile.avatarColorHex).copy(alpha = 0.24f))
+                                .border(1.5.dp, Color(activeProfile.avatarColorHex), RoundedCornerShape(14.dp))
+                        ) {
+                            Text(activeProfile.avatarEmoji, fontSize = 24.sp)
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = activeProfile.name,
+                                style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp),
+                                color = Color.White
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = if (isSignedIn) "Cloud Sync Active • ${accountUsername ?: accountEmail.orEmpty()}"
+                                else "Local Profile • Create an account or sign in to sync",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 17.sp),
+                                color = if (isSignedIn) NaphColors.EmeraldSeed else NaphColors.TextSecondary
+                            )
+                        }
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        ModernGlassButton(
+                            text = "Switch / Add (${profiles.size})",
+                            icon = Icons.Default.People,
+                            onClick = { appState.toggleProfilePicker(true) },
+                            modifier = if (isCompact) Modifier.weight(1f) else Modifier
+                        )
+                        ModernGlassButton(
+                            text = "Delete Profile",
+                            icon = Icons.Default.Delete,
+                            iconTint = NaphColors.CrimsonPlay,
+                            textColor = NaphColors.CrimsonPlay,
+                            onClick = { appState.deleteProfile(activeProfile.id) },
+                            modifier = if (isCompact) Modifier.weight(1f) else Modifier
+                        )
+                    }
                 }
             }
-        }
 
-        // SECTION 1: ACCOUNT
-        item {
+            // SECTION 1: ACCOUNT
             SettingsSectionCard(sectionTitle = "ACCOUNT & PROFILES") {
                 SettingsRowItem(
                     icon = Icons.Default.People,
@@ -241,8 +249,8 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
                 SettingsRowItem(
                     icon = Icons.Default.Person,
                     title = "Create Account / Sign In (NAPH Cloud)",
-                    subtitle = if (isSignedIn) "Signed in as ${accountUsername ?: accountEmail ?: "User"} • Cross-platform sync active"
-                    else "Create your own free NAPH account or sign in to sync addons & watch progress",
+                    subtitle = if (isSignedIn) "Signed in as ${accountUsername ?: accountEmail ?: "User"} • Syncing across devices"
+                    else "Create your own account or sign in to sync addons & watch progress",
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ACCOUNT_DETAIL) }
                 )
                 SettingsDivider()
@@ -260,43 +268,41 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.TRACKING) }
                 )
             }
-        }
 
-        // SECTION 2: GENERAL
-        item {
+            // SECTION 2: GENERAL
             SettingsSectionCard(sectionTitle = "GENERAL") {
                 SettingsRowItem(
                     icon = Icons.Default.Palette,
                     title = "Appearance",
-                    subtitle = "Theme preset (${selectedTheme.label}), high-contrast text & AMOLED black mode",
+                    subtitle = "Theme preset (${selectedTheme.label}) & AMOLED pitch-black mode",
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.APPEARANCE) }
                 )
                 SettingsDivider()
                 SettingsRowItem(
                     icon = Icons.Default.GridView,
                     title = "Layout Customization",
-                    subtitle = "Customize sidebar hover mode, Netflix poster cards, optional ratings & stream badges",
+                    subtitle = "Sidebar hover mode, Netflix poster cards, optional ratings & stream badges",
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.LAYOUT_CUSTOMIZATION) }
                 )
                 SettingsDivider()
                 SettingsRowItem(
                     icon = Icons.Default.Explore,
                     title = "Content & Discovery",
-                    subtitle = "${installedAddons.size} installed addons • ${servers.size} personal media servers (Jellyfin / Emby)",
+                    subtitle = "${installedAddons.size} installed addons • ${servers.size} media servers (Jellyfin / Emby)",
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.CONTENT_DISCOVERY) }
                 )
                 SettingsDivider()
                 SettingsRowItem(
                     icon = Icons.Default.PlayArrow,
                     title = "Playback & P2P Engine",
-                    subtitle = "Video player engine, auto-skip intros, subtitle appearance & P2P temporary cache",
+                    subtitle = "Video player engine, auto-skip intros, subtitles & P2P temporary cache",
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.PLAYBACK) }
                 )
                 SettingsDivider()
                 SettingsRowItem(
                     icon = Icons.Default.Link,
                     title = "Integrations",
-                    subtitle = "Debrid services (Real-Debrid, AllDebrid, TorBox, Premiumize), TMDB & MDBList ratings",
+                    subtitle = "Debrid services (Real-Debrid, AllDebrid, TorBox, Premiumize), TMDB & MDBList",
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.INTEGRATIONS) }
                 )
                 SettingsDivider()
@@ -307,15 +313,13 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.NOTIFICATIONS) }
                 )
             }
-        }
 
-        // SECTION 3: ABOUT
-        item {
+            // SECTION 3: ABOUT
             SettingsSectionCard(sectionTitle = "ABOUT") {
                 SettingsRowItem(
                     icon = Icons.Default.Info,
                     title = "About NAPH",
-                    subtitle = "Version 1.0.0 • Open-Source Multiplatform Media Center (Windows, Linux, iOS, Android)",
+                    subtitle = "Version 1.0.0 • Cross-Platform Media Center (Linux, Windows, iOS, Android)",
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ABOUT) }
                 )
             }
@@ -363,14 +367,21 @@ private fun AccountDetailSubPage(appState: NaphAppState) {
 
                 if (isSignedIn) {
                     Spacer(Modifier.height(4.dp))
-                    ModernGlassButton(
-                        text = "Sign Out",
-                        textColor = NaphColors.CrimsonPlay,
-                        onClick = {
-                            appState.syncRepo.signOutNaphAccount()
-                            appState.showBanner("Signed out of NAPH Cloud")
-                        }
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        ModernPrimaryButton(
+                            text = "Sync Now",
+                            icon = Icons.Default.Refresh,
+                            onClick = { appState.syncCloudNow() }
+                        )
+                        ModernGlassButton(
+                            text = "Sign Out",
+                            textColor = NaphColors.CrimsonPlay,
+                            onClick = {
+                                appState.syncRepo.signOutNaphAccount()
+                                appState.showBanner("Signed out of NAPH Cloud")
+                            }
+                        )
+                    }
                 } else {
                     // Mode Switcher: Create New Account vs Sign In
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -424,12 +435,7 @@ private fun AccountDetailSubPage(appState: NaphAppState) {
                                 text = "Create Account & Enable Sync",
                                 icon = Icons.Default.Add,
                                 onClick = {
-                                    val res = appState.syncRepo.createNaphAccount(usernameInput, emailInput, passwordInput)
-                                    res.onSuccess { user ->
-                                        appState.showBanner("Created NAPH Cloud account for $user")
-                                    }.onFailure { err ->
-                                        appState.showBanner(err.message ?: "Could not create account")
-                                    }
+                                    appState.createAccountAndSync(usernameInput, emailInput, passwordInput)
                                 }
                             )
                         } else {
@@ -437,12 +443,7 @@ private fun AccountDetailSubPage(appState: NaphAppState) {
                                 text = "Sign In & Sync Devices",
                                 icon = Icons.Default.Check,
                                 onClick = {
-                                    val res = appState.syncRepo.signInWithNaphAccount(emailInput, passwordInput)
-                                    res.onSuccess { user ->
-                                        appState.showBanner("Signed in as $user")
-                                    }.onFailure { err ->
-                                        appState.showBanner(err.message ?: "Could not sign in")
-                                    }
+                                    appState.signInAndSync(emailInput, passwordInput)
                                 }
                             )
                         }
@@ -1461,17 +1462,16 @@ private fun AboutSubPage() {
 
 @Composable
 private fun SubPageContainer(content: @Composable ColumnScope.() -> Unit) {
-    LazyColumn(
-        contentPadding = PaddingValues(horizontal = 32.dp, vertical = 26.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
-        modifier = Modifier.fillMaxSize()
-    ) {
-        item {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                content = content
-            )
-        }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val hPad = if (maxWidth < 600.dp) 16.dp else 28.dp
+        Column(
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(start = hPad, end = hPad, top = 18.dp, bottom = 124.dp),
+            content = content
+        )
     }
 }
 
@@ -1480,19 +1480,15 @@ private fun SettingsSectionCard(
     sectionTitle: String,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = sectionTitle,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, letterSpacing = 0.8.sp),
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(horizontal = 6.dp)
         )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp)),
+        LiquidGlassCard(
+            cornerRadius = 16.dp,
             content = content
         )
     }
