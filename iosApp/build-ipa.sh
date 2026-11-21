@@ -46,18 +46,22 @@ MPV_INCLUDE_FLAGS=("-I" "$P2P_BUILD_DIR")
 DYNAMIC_FRAMEWORKS=()
 
 while IFS= read -r fw_path; do
+  # Skip duplicate -GPL slices (and GPL-only Libsmbclient) + macOS-only Libluajit
+  if [[ "$fw_path" == *"-GPL/"* ]] || [[ "$fw_path" == *"/Libsmbclient/"* ]] || [[ "$fw_path" == *"/Libluajit/"* ]]; then
+    continue
+  fi
+
   fw_parent="$(dirname "$fw_path")"
   fw_base="$(basename "$fw_path")"
   fw_name="${fw_base%.framework}"
   fw_bin="$fw_path/$fw_name"
 
-  # Skip macOS-only luajit if present
-  if [[ "$fw_name" == "Libluajit" ]]; then
-    continue
-  fi
-
   MPV_SEARCH_FLAGS+=("-F" "$fw_parent")
   MPV_LINK_FLAGS+=("-framework" "$fw_name")
+
+  if [[ "$fw_name" == "Libmpv" && -d "$fw_path/Headers" ]]; then
+    MPV_INCLUDE_FLAGS+=("-I" "$fw_path/Headers")
+  fi
 
   if [[ -f "$fw_bin" ]]; then
     if file "$fw_bin" | grep -q "dynamically linked shared library"; then
