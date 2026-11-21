@@ -29,8 +29,8 @@ final class NaphMetalVideoView: UIView {
         super.layoutSubviews()
         metalLayer.frame = bounds
         metalLayer.drawableSize = CGSize(
-            width: max(1, bounds.width * contentsScale),
-            height: max(1, bounds.height * contentsScale)
+            width: max(1, bounds.width * metalLayer.contentsScale),
+            height: max(1, bounds.height * metalLayer.contentsScale)
         )
     }
 }
