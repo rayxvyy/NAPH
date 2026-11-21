@@ -19,7 +19,11 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Build IPA
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build Native iOS IPA (ComposeApp + Nuvio MPVKit + Embedded Go P2P Engine)
         run: |
           chmod +x ./gradlew ./iosApp/build-ipa.sh
           ./iosApp/build-ipa.sh
@@ -29,7 +33,7 @@ jobs:
           file iosApp/build/Payload/NAPH.app/NAPH | grep -q "Mach-O 64-bit executable arm64"
           SIZE=$(stat -f%z iosApp/build/NAPH-1.0.0-ios-arm64.ipa)
           echo "IPA size: $SIZE bytes"
-          test "$SIZE" -gt 10000000
+          test "$SIZE" -gt 15000000
 
       - uses: actions/upload-artifact@v4
         with:

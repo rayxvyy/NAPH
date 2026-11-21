@@ -21,7 +21,7 @@ struct ContentView: View {
 @main
 struct NaphIOSApp: App {
     init() {
-        // Playback audio session so video keeps sound with the silent switch on, plus AirPlay
+        // 1. Configure AVAudioSession for continuous movie playback & AirPlay 2
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
@@ -29,6 +29,14 @@ struct NaphIOSApp: App {
         } catch {
             print("NAPH audio session error: \(error)")
         }
+
+        // 2. Register Nuvio's MPVKit (`libmpv` + `MoltenVK` + `VideoToolbox` + `libass`) as the iOS Video Player
+        IosVideoEngineRegistry.shared.mpvControllerFactory = {
+            NaphMpvSurfaceController()
+        }
+
+        // 3. Register Real On-Device iOS Sequential BitTorrent Engine (`anacrolix/torrent` HTTP Byte-Range Server)
+        NaphGoTorrentBridge.register()
     }
 
     var body: some Scene {

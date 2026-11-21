@@ -33,6 +33,9 @@ interface IosMpvSurfaceController {
     fun loadStream(url: String)
     fun setPlaying(playing: Boolean)
     fun seekToMs(ms: Long)
+    fun setPlaybackSpeed(speed: Float)
+    fun setVolume(volume: Float)
+    fun addSubtitleTrack(url: String)
     fun setSubtitleDelayMs(delayMs: Long)
     fun currentPositionMs(): Long
     fun currentDurationMs(): Long
@@ -98,6 +101,7 @@ actual fun NativeVideoSurface(
     LaunchedEffect(isPlaying, playbackSpeed) {
         if (mpvController != null) {
             mpvController.setPlaying(isPlaying)
+            mpvController.setPlaybackSpeed(playbackSpeed)
         } else {
             if (isPlaying) {
                 avPlayer?.play()
@@ -110,7 +114,17 @@ actual fun NativeVideoSurface(
 
     // Sync Volume
     LaunchedEffect(volume) {
-        avPlayer?.volume = volume.coerceIn(0f, 1f)
+        if (mpvController != null) {
+            mpvController.setVolume(volume.coerceIn(0f, 1f))
+        } else {
+            avPlayer?.volume = volume.coerceIn(0f, 1f)
+        }
+    }
+
+    // Load External Subtitle Track in MPVKit
+    LaunchedEffect(subtitleUrl) {
+        val sub = subtitleUrl?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        mpvController?.addSubtitleTrack(sub)
     }
 
     // Sync Seek
