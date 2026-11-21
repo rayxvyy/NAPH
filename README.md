@@ -20,7 +20,7 @@ It starts clean with no pre-installed content or bloated defaults—you add the 
 
 ## Downloads
 
-Pre-built packages for **Linux** and **Windows** are available on the [**Releases**](https://github.com/rayxvyy/NAPH/releases) tab.
+Pre-built packages for **Linux**, **Windows**, and **iOS** are available on the [**Releases**](https://github.com/rayxvyy/NAPH/releases) tab (`v1.0.0`).
 
 ---
 
