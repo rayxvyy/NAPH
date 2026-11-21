@@ -55,8 +55,8 @@ MPV_INCLUDE_FLAGS=("-I" "$P2P_BUILD_DIR")
 DYNAMIC_FRAMEWORKS=()
 
 while IFS= read -r fw_path; do
-  # Skip duplicate -GPL slices (and GPL-only Libsmbclient) + macOS-only Libluajit
-  if [[ "$fw_path" == *"-GPL/"* ]] || [[ "$fw_path" == *"/Libsmbclient/"* ]] || [[ "$fw_path" == *"/Libluajit/"* ]]; then
+  # Skip duplicate -GPL slices, GPL-only Libsmbclient, macOS-only Libluajit, and simulator/maccatalyst slices
+  if [[ "$fw_path" == *"-GPL/"* ]] || [[ "$fw_path" == *"/Libsmbclient/"* ]] || [[ "$fw_path" == *"/Libluajit/"* ]] || [[ "$fw_path" == *"-simulator"* ]] || [[ "$fw_path" == *"-maccatalyst"* ]]; then
     continue
   fi
 
