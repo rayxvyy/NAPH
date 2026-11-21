@@ -135,11 +135,11 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(
+                TargetFormat.Dmg,
                 TargetFormat.Msi,
                 TargetFormat.Exe,
                 TargetFormat.Deb,
-                TargetFormat.Rpm,
-                TargetFormat.AppImage
+                TargetFormat.Rpm
             )
             packageName = "NAPH"
             packageVersion = "1.0.0"
