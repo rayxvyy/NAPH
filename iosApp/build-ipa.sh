@@ -24,12 +24,21 @@ mkdir -p "$APP_DIR" "$P2P_BUILD_DIR"
 (
   cd "$SCRIPT_DIR/p2p-go"
   go mod tidy
+
+  IOS_CC_WRAPPER="$P2P_BUILD_DIR/ios-clang.sh"
+  cat << WRAP > "$IOS_CC_WRAPPER"
+#!/usr/bin/env bash
+exec "$CLANG_BIN" -target arm64-apple-ios15.0 -arch arm64 -isysroot "$SDK_PATH" -miphoneos-version-min=15.0 "\$@"
+WRAP
+  chmod +x "$IOS_CC_WRAPPER"
+
   CGO_ENABLED=1 \
   GOOS=ios \
   GOARCH=arm64 \
-  CC="$CLANG_BIN" \
-  CGO_CFLAGS="-arch arm64 -isysroot $SDK_PATH -miphoneos-version-min=15.0" \
-  CGO_LDFLAGS="-arch arm64 -isysroot $SDK_PATH -miphoneos-version-min=15.0" \
+  CC="$IOS_CC_WRAPPER" \
+  CXX="$IOS_CC_WRAPPER" \
+  CGO_CFLAGS="-target arm64-apple-ios15.0 -arch arm64 -isysroot $SDK_PATH -miphoneos-version-min=15.0" \
+  CGO_LDFLAGS="-target arm64-apple-ios15.0 -arch arm64 -isysroot $SDK_PATH -miphoneos-version-min=15.0" \
   go build -buildmode=c-archive -trimpath -ldflags="-s -w" -o "$P2P_BUILD_DIR/libnaph_p2p_ios.a" .
 )
 ls -lh "$P2P_BUILD_DIR/libnaph_p2p_ios.a" "$P2P_BUILD_DIR/libnaph_p2p_ios.h"
