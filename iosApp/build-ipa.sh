@@ -77,7 +77,7 @@ while IFS= read -r fw_path; do
       DYNAMIC_FRAMEWORKS+=("$fw_path")
     fi
   fi
-done < <(find "$SCRIPT_DIR/mpv-deps/.build/artifacts" -type d -path "*/ios-arm64/*.framework" | sort)
+done < <(find "$SCRIPT_DIR/mpv-deps/.build/artifacts" -type d \( -path "*/ios-arm64/*.framework" -o -path "*/ios-arm64_*/*.framework" \) | sort)
 
 echo "Resolved ${#MPV_LINK_FLAGS[@]} MPVKit framework flags (${#DYNAMIC_FRAMEWORKS[@]} dynamic frameworks)"
 
