@@ -51,8 +51,12 @@ echo "==> [3/5] Resolving NuvioMedia/MPVKit binary XCFrameworks via SwiftPM..."
 
 MPV_SEARCH_FLAGS=()
 MPV_LINK_FLAGS=()
+MPV_STATIC_LIBS=()
 MPV_INCLUDE_FLAGS=("-I" "$P2P_BUILD_DIR")
 DYNAMIC_FRAMEWORKS=()
+
+echo "MoltenVK artifact layout:"
+find "$SCRIPT_DIR/mpv-deps/.build/artifacts" -iname "*moltenvk*" | head -n 20 || true
 
 while IFS= read -r fw_path; do
   # Skip duplicate -GPL slices, GPL-only Libsmbclient, macOS-only Libluajit, and simulator/maccatalyst slices
@@ -79,7 +83,14 @@ while IFS= read -r fw_path; do
   fi
 done < <(find "$SCRIPT_DIR/mpv-deps/.build/artifacts" -type d \( -path "*/ios-arm64/*.framework" -o -path "*/ios-arm64_*/*.framework" \) | sort)
 
-echo "Resolved ${#MPV_LINK_FLAGS[@]} MPVKit framework flags (${#DYNAMIC_FRAMEWORKS[@]} dynamic frameworks)"
+while IFS= read -r a_path; do
+  if [[ "$a_path" == *"-GPL/"* ]] || [[ "$a_path" == *"/Libsmbclient/"* ]] || [[ "$a_path" == *"/Libluajit/"* ]] || [[ "$a_path" == *"-simulator"* ]] || [[ "$a_path" == *"-maccatalyst"* ]]; then
+    continue
+  fi
+  MPV_STATIC_LIBS+=("$a_path")
+done < <(find "$SCRIPT_DIR/mpv-deps/.build/artifacts" -type f \( -path "*/ios-arm64*/*.a" -o -path "*/ios-arm64*/*/*.a" \) | sort)
+
+echo "Resolved ${#MPV_LINK_FLAGS[@]} MPVKit framework flags, ${#MPV_STATIC_LIBS[@]} static .a libs (${#DYNAMIC_FRAMEWORKS[@]} dynamic frameworks)"
 
 echo "==> [4/5] Preparing Payload/NAPH.app & linking ComposeApp + MPVKit + libnaph_p2p_ios.a..."
 cp "$SCRIPT_DIR/iosApp/Info.plist" "$APP_DIR/Info.plist"
@@ -109,6 +120,7 @@ xcrun --sdk iphoneos swiftc \
   "${MPV_SEARCH_FLAGS[@]}" \
   -framework ComposeApp \
   "${MPV_LINK_FLAGS[@]}" \
+  "${MPV_STATIC_LIBS[@]}" \
   "$P2P_BUILD_DIR/libnaph_p2p_ios.a" \
   -framework UIKit \
   -framework SwiftUI \
