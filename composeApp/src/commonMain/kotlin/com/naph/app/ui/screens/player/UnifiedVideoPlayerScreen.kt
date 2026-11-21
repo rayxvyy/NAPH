@@ -3,13 +3,14 @@ package com.naph.app.ui.screens.player
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,17 +39,19 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.BrightnessHigh
-import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -68,6 +71,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -77,7 +83,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -100,10 +106,8 @@ import kotlin.math.roundToInt
 private enum class PlayerSheet {
     NONE,
     SUBTITLES,
-    AUDIO,
-    SPEED,
-    EXTERNAL,
-    CAST
+    AUDIO_SPEED,
+    EXTERNAL
 }
 
 private enum class DragGestureAxis {
@@ -113,21 +117,21 @@ private enum class DragGestureAxis {
     VERTICAL_VOLUME
 }
 
-private val TopScrimBrush = Brush.verticalGradient(
-    colors = listOf(Color.Black.copy(alpha = 0.82f), Color.Black.copy(alpha = 0.25f), Color.Transparent)
+private val PlezyTopScrim = Brush.verticalGradient(
+    colors = listOf(Color.Black.copy(alpha = 0.72f), Color.Black.copy(alpha = 0.22f), Color.Transparent)
 )
 
-private val BottomScrimBrush = Brush.verticalGradient(
-    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f), Color.Black.copy(alpha = 0.92f))
+private val PlezyBottomScrim = Brush.verticalGradient(
+    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.30f), Color.Black.copy(alpha = 0.80f))
 )
 
 /**
  * Plezy-Style Minimal Cinema Player + Moonfin Gestures + 150% Volume Boost:
- * - Clean minimal bottom bar (slim scrubber, timestamps, Play/Pause, -10s/+10s, Next Ep, Boost, Speed, Aspect, Audio, Subtitles)
- * - Moonfin touch gestures on mobile: single-tap HUD toggle, double-tap left/right ±10s, horizontal scrub,
- *   vertical swipe left=Brightness / right=Volume (0-150% Boost), long-press=temporary 2x speed
- * - All modal sheets (Subtitles, Audio, Speed, External Player, Cast) render inside `Dialog(...)` so they
- *   ALWAYS appear cleanly above heavyweight `SwingPanel` (Linux/Windows) and `UIKitView` (iOS)
+ * - Clean borderless top bar (← Title / S1·E2 subtitle on left; Tune/Boost/Speed, Subtitles, Aspect, Lock, External icons on right)
+ * - Floating center transport circles (-10s, big Play/Pause, +10s) directly over video center on mobile
+ * - Ultra-clean razor-thin 4dp Plezy bottom scrubber with sleek vertical white pill thumb & elapsed/remaining timestamps
+ * - Moonfin swipe gestures: vertical left=Brightness, vertical right=Volume (0–150% Boost), horizontal=scrub, double-tap ±10s, long-press=2x
+ * - Dialog-backed modal sheets so Subtitles, Audio/Boost & Speed ALWAYS open above SwingPanel (Linux/Win) and UIKitView (iOS)
  */
 @Composable
 fun UnifiedVideoPlayerScreen(
@@ -164,7 +168,7 @@ fun UnifiedVideoPlayerScreen(
     var brightness by remember { mutableStateOf(1.0f) }
     val effectiveVolume = if (isMuted) 0f else volume
 
-    // Aspect ratio mode & track cycling
+    // Aspect ratio & track cycling
     val aspectModes = remember { listOf("fit", "fill", "16:9", "stretch") }
     var aspectIndex by remember { mutableStateOf(0) }
     val aspectMode = aspectModes[aspectIndex]
@@ -173,12 +177,13 @@ fun UnifiedVideoPlayerScreen(
     var cycleAudioTick by remember { mutableStateOf(0) }
     var cycleEmbeddedSubTick by remember { mutableStateOf(0) }
 
-    // Auto-hiding HUD & active Dialog sheet
+    // HUD, Screen Lock & Dialog Sheet
     var showControls by remember { mutableStateOf(true) }
+    var isScreenLocked by remember { mutableStateOf(false) }
     var hudInteractionTick by remember { mutableStateOf(0) }
     var activeSheet by remember { mutableStateOf(PlayerSheet.NONE) }
 
-    // Gesture visual HUD feedback
+    // Gesture feedback pill
     var gestureHudLabel by remember { mutableStateOf<String?>(null) }
     var gestureHudProgress by remember { mutableStateOf<Float?>(null) }
     var gestureHudIcon by remember { mutableStateOf<ImageVector?>(null) }
@@ -190,7 +195,7 @@ fun UnifiedVideoPlayerScreen(
         runCatching { focusRequester.requestFocus() }
     }
 
-    // Auto-hide controls after 3.5s of inactivity while playing (on touch/overlay mode)
+    // Auto-hide controls after 3.5s while playing (mobile overlay mode)
     LaunchedEffect(showControls, isPlaying, activeSheet, hudInteractionTick) {
         if (showControls && isPlaying && activeSheet == PlayerSheet.NONE && !isDesktopAwtHost) {
             delay(3500)
@@ -198,10 +203,10 @@ fun UnifiedVideoPlayerScreen(
         }
     }
 
-    // Auto-clear transient gesture HUD pill
+    // Auto-clear transient gesture feedback pill
     LaunchedEffect(gestureHudTick) {
         if (gestureHudLabel != null && seekPreviewMs == null && !isTemp2x) {
-            delay(1100)
+            delay(1000)
             gestureHudLabel = null
             gestureHudProgress = null
             gestureHudIcon = null
@@ -253,12 +258,21 @@ fun UnifiedVideoPlayerScreen(
         if (matchingSegment != null && activeProfile.autoSkipIntros && matchingSegment.type == SkipSegmentType.INTRO) {
             positionMs = matchingSegment.endMs
             requestedSeekMs = matchingSegment.endMs
-            appState.showBanner("Auto-Skipped Intro")
         }
     }
 
-    val displayTitle = remember(media.name, episode) {
-        if (episode != null) "${media.name} • S${episode!!.season}E${episode!!.episode}" else media.name
+    val subtitleLine = remember(episode, currentStream, p2pTelemetry) {
+        buildString {
+            if (episode != null) {
+                append("S${episode!!.season} · E${episode!!.episode}")
+                if (episode!!.title.isNotBlank()) append(" · ${episode!!.title}")
+                append(" · ")
+            }
+            append(currentStream.detectedResolution)
+            if (currentStream.infoHash != null && p2pTelemetry != null) {
+                append(" · ${p2pTelemetry!!.connectedPeers} peers")
+            }
+        }
     }
 
     Box(
@@ -286,13 +300,11 @@ fun UnifiedVideoPlayerScreen(
                         Key.DirectionUp -> {
                             isMuted = false
                             volume = (volume + 0.1f).coerceIn(0f, 1.5f)
-                            triggerHudFeedback("Volume ${(volume * 100).roundToInt()}%", volume / 1.5f, Icons.AutoMirrored.Filled.VolumeUp)
                             true
                         }
                         Key.DirectionDown -> {
                             isMuted = false
                             volume = (volume - 0.1f).coerceIn(0f, 1.5f)
-                            triggerHudFeedback("Volume ${(volume * 100).roundToInt()}%", volume / 1.5f, Icons.AutoMirrored.Filled.VolumeUp)
                             true
                         }
                         Key.B -> {
@@ -304,12 +316,11 @@ fun UnifiedVideoPlayerScreen(
                             true
                         }
                         Key.A -> {
-                            activeSheet = if (activeSheet == PlayerSheet.AUDIO) PlayerSheet.NONE else PlayerSheet.AUDIO
+                            activeSheet = if (activeSheet == PlayerSheet.AUDIO_SPEED) PlayerSheet.NONE else PlayerSheet.AUDIO_SPEED
                             true
                         }
                         Key.V -> {
                             aspectIndex = (aspectIndex + 1) % aspectModes.size
-                            triggerHudFeedback("Aspect: ${aspectModes[aspectIndex].uppercase()}", icon = Icons.Default.AspectRatio)
                             true
                         }
                         Key.F -> {
@@ -332,19 +343,27 @@ fun UnifiedVideoPlayerScreen(
             }
     ) {
         if (isDesktopAwtHost) {
-            // DESKTOP (LINUX & WINDOWS): Banded layout so heavyweight AWT `SwingPanel` never occludes the Plezy controls!
+            // =========================================================================
+            // DESKTOP (LINUX & WINDOWS): Banded Plezy UI so heavyweight AWT SwingPanel never occludes controls
+            // =========================================================================
             Column(modifier = Modifier.fillMaxSize()) {
                 if (showControls) {
-                    PlezyTopBar(
-                        title = displayTitle,
-                        streamBadge = currentStream.detectedResolution,
-                        p2pPeers = p2pTelemetry?.connectedPeers ?: 0,
-                        isP2p = currentStream.infoHash != null,
+                    PlezyTopHeader(
+                        title = media.name,
+                        subtitle = subtitleLine,
+                        isLocked = false,
+                        showLockIcon = false,
+                        showHideIcon = true,
+                        subtitlesActive = subtitlesEnabled && (selectedSubtitle != null || cycleEmbeddedSubTick > 0),
+                        isBoosted = !isMuted && volume > 1.02f,
                         onBack = { appState.stopPlaybackAndSaveProgress(positionMs, durationMs) },
-                        onToggleZenMode = { showControls = false },
+                        onOpenAudioSpeed = { activeSheet = PlayerSheet.AUDIO_SPEED },
+                        onOpenSubtitles = { activeSheet = PlayerSheet.SUBTITLES },
+                        onCycleAspect = { aspectIndex = (aspectIndex + 1) % aspectModes.size },
+                        onToggleLock = {},
+                        onHideControls = { showControls = false },
                         onOpenExternal = { activeSheet = PlayerSheet.EXTERNAL },
-                        onOpenCast = { activeSheet = PlayerSheet.CAST },
-                        isDesktop = true
+                        modifier = Modifier.background(Color(0xFF0A0C10))
                     )
                 }
 
@@ -384,51 +403,88 @@ fun UnifiedVideoPlayerScreen(
                 }
 
                 if (showControls) {
-                    PlezyMinimalBottomBar(
-                        positionMs = seekPreviewMs ?: positionMs,
-                        durationMs = durationMs,
-                        isPlaying = isPlaying,
-                        hasNextEpisode = episode != null,
-                        volume = effectiveVolume,
-                        isMuted = isMuted,
-                        playbackSpeed = effectiveSpeed,
-                        aspectMode = aspectMode,
-                        subtitlesActive = subtitlesEnabled && (selectedSubtitle != null || cycleEmbeddedSubTick > 0),
-                        activeSkipSegment = activeSkipSegment,
-                        onSeek = { target ->
-                            positionMs = target
-                            requestedSeekMs = target
-                        },
-                        onPlayPause = { isPlaying = !isPlaying },
-                        onRewind10 = { performRelativeSeek(-10_000L) },
-                        onForward10 = { performRelativeSeek(10_000L) },
-                        onNextEpisode = { appState.playNextEpisodeInQueue() },
-                        onCycleBoost = { cycleVolumeBoost() },
-                        onCycleAspect = {
-                            aspectIndex = (aspectIndex + 1) % aspectModes.size
-                        },
-                        onOpenSpeed = { activeSheet = PlayerSheet.SPEED },
-                        onOpenAudio = { activeSheet = PlayerSheet.AUDIO },
-                        onOpenSubtitles = { activeSheet = PlayerSheet.SUBTITLES },
-                        onSkipSegment = { seg ->
-                            positionMs = seg.endMs
-                            requestedSeekMs = seg.endMs
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF0A0C10))
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        PlezyScrubberSection(
+                            positionMs = seekPreviewMs ?: positionMs,
+                            durationMs = durationMs,
+                            volume = effectiveVolume,
+                            isMuted = isMuted,
+                            playbackSpeed = effectiveSpeed,
+                            activeSkipSegment = activeSkipSegment,
+                            onSeek = { target ->
+                                positionMs = target
+                                requestedSeekMs = target
+                            },
+                            onSkipSegment = { seg ->
+                                positionMs = seg.endMs
+                                requestedSeekMs = seg.endMs
+                            }
+                        )
+                        // Clean minimal desktop transport row centered under the razor-thin scrubber
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PlezyCleanIconButton(
+                                icon = Icons.Default.FastRewind,
+                                contentDescription = "-10s",
+                                iconSize = 24.dp,
+                                onClick = { performRelativeSeek(-10_000L) }
+                            )
+                            Spacer(Modifier.width(18.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.14f))
+                                    .clickable { isPlaying = !isPlaying },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(18.dp))
+                            PlezyCleanIconButton(
+                                icon = Icons.Default.FastForward,
+                                contentDescription = "+10s",
+                                iconSize = 24.dp,
+                                onClick = { performRelativeSeek(10_000L) }
+                            )
+                            if (episode != null) {
+                                Spacer(Modifier.width(18.dp))
+                                PlezyCleanIconButton(
+                                    icon = Icons.Default.SkipNext,
+                                    contentDescription = "Next Episode",
+                                    iconSize = 24.dp,
+                                    onClick = { appState.playNextEpisodeInQueue() }
+                                )
+                            }
                         }
-                    )
+                    }
                 } else {
-                    // Thin 28dp restore strip at bottom when desktop user hides bars with F or Fullscreen button
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(26.dp)
+                            .height(22.dp)
                             .background(Color.Black)
                             .clickable { showControls = true },
                         contentAlignment = Alignment.Center
                     ) {
                         Box(
                             modifier = Modifier
-                                .width(64.dp)
-                                .height(4.dp)
+                                .width(56.dp)
+                                .height(3.dp)
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.25f))
                         )
@@ -436,7 +492,9 @@ fun UnifiedVideoPlayerScreen(
                 }
             }
         } else {
-            // iOS & ANDROID: True edge-to-edge fullscreen video + Moonfin gesture layer + auto-hiding Plezy floating bars
+            // =========================================================================
+            // iOS & ANDROID: True Edge-to-Edge Fullscreen Plezy Cinema Player + Moonfin Gestures
+            // =========================================================================
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val screenWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
                 val screenHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
@@ -469,7 +527,7 @@ fun UnifiedVideoPlayerScreen(
                     )
                 }
 
-                // Software brightness dimming overlay (controlled by vertical left-side swipe)
+                // Software brightness overlay (controlled by left vertical swipe)
                 if (brightness < 0.99f) {
                     Box(
                         modifier = Modifier
@@ -478,26 +536,21 @@ fun UnifiedVideoPlayerScreen(
                     )
                 }
 
-                // Moonfin Fullscreen Touch Gesture Layer:
-                // - Single tap: toggle Plezy HUD
-                // - Double-tap left/right: -10s / +10s
-                // - Long press: temporary 2.0x speed
-                // - Horizontal drag: scrub timeline backward/forward
-                // - Vertical drag left half: Brightness (15%-100%)
-                // - Vertical drag right half: Volume (0%-150% Boost)
+                // Moonfin Fullscreen Touch & Swipe Gesture Layer
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(screenWidthPx, durationMs) {
+                        .pointerInput(screenWidthPx, durationMs, isScreenLocked) {
                             detectTapGestures(
                                 onTap = {
                                     showControls = !showControls
                                     hudInteractionTick++
                                 },
                                 onDoubleTap = { offset ->
-                                    if (offset.x < screenWidthPx * 0.45f) {
+                                    if (isScreenLocked) return@detectTapGestures
+                                    if (offset.x < screenWidthPx * 0.42f) {
                                         performRelativeSeek(-10_000L)
-                                    } else if (offset.x > screenWidthPx * 0.55f) {
+                                    } else if (offset.x > screenWidthPx * 0.58f) {
                                         performRelativeSeek(10_000L)
                                     } else {
                                         isPlaying = !isPlaying
@@ -508,6 +561,7 @@ fun UnifiedVideoPlayerScreen(
                                     }
                                 },
                                 onLongPress = {
+                                    if (isScreenLocked) return@detectTapGestures
                                     isTemp2x = true
                                     gestureHudLabel = "2.0x Speed"
                                     gestureHudProgress = null
@@ -523,7 +577,8 @@ fun UnifiedVideoPlayerScreen(
                                 }
                             )
                         }
-                        .pointerInput(screenWidthPx, screenHeightPx, durationMs) {
+                        .pointerInput(screenWidthPx, screenHeightPx, durationMs, isScreenLocked) {
+                            if (isScreenLocked) return@pointerInput
                             var axis = DragGestureAxis.NONE
                             var startPosMs = 0L
                             var accumDx = 0f
@@ -532,7 +587,7 @@ fun UnifiedVideoPlayerScreen(
                             var accumDy = 0f
 
                             detectDragGestures(
-                                onDragStart = { startOffset ->
+                                onDragStart = {
                                     axis = DragGestureAxis.NONE
                                     startPosMs = positionMs
                                     accumDx = 0f
@@ -546,11 +601,9 @@ fun UnifiedVideoPlayerScreen(
                                         positionMs = finalTarget
                                         requestedSeekMs = finalTarget
                                         seekPreviewMs = null
-                                        gestureHudTick++
-                                    } else {
-                                        gestureHudTick++
                                     }
                                     axis = DragGestureAxis.NONE
+                                    gestureHudTick++
                                 },
                                 onDragCancel = {
                                     seekPreviewMs = null
@@ -608,7 +661,7 @@ fun UnifiedVideoPlayerScreen(
                         }
                 )
 
-                // Floating Gesture Feedback Pill (center-top)
+                // Floating Gesture Feedback Pill (top-center)
                 AnimatedVisibility(
                     visible = gestureHudLabel != null,
                     enter = fadeIn(),
@@ -616,19 +669,14 @@ fun UnifiedVideoPlayerScreen(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
-                        .padding(top = 66.dp)
+                        .padding(top = 60.dp)
                 ) {
                     val isBoostedHud = gestureHudLabel?.startsWith("Boost") == true
                     Column(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(Color(0xD80A0D14))
-                            .border(
-                                1.dp,
-                                if (isBoostedHud) NaphColors.AmberWarn.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.2f),
-                                RoundedCornerShape(20.dp)
-                            )
-                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.Black.copy(alpha = 0.72f))
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
@@ -647,110 +695,214 @@ fun UnifiedVideoPlayerScreen(
                             Text(
                                 text = gestureHudLabel.orEmpty(),
                                 color = if (isBoostedHud) NaphColors.AmberWarn else Color.White,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp
                             )
                         }
                         if (gestureHudProgress != null) {
                             Box(
                                 modifier = Modifier
-                                    .width(120.dp)
-                                    .height(4.dp)
+                                    .width(116.dp)
+                                    .height(3.dp)
                                     .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.2f))
+                                    .background(Color.White.copy(alpha = 0.25f))
                             ) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxHeight()
                                         .fillMaxWidth(gestureHudProgress!!.coerceIn(0f, 1f))
                                         .clip(CircleShape)
-                                        .background(if (isBoostedHud) NaphColors.AmberWarn else NaphColors.CyanGlow)
+                                        .background(if (isBoostedHud) NaphColors.AmberWarn else Color.White)
                                 )
                             }
                         }
                     }
                 }
 
-                // Auto-hiding Floating Top Bar
-                AnimatedVisibility(
-                    visible = showControls,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                    modifier = Modifier.align(Alignment.TopCenter)
-                ) {
-                    Box(
+                // If Screen Locked, show ONLY a tiny unlock pill when tapped
+                if (isScreenLocked) {
+                    AnimatedVisibility(
+                        visible = showControls,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .background(TopScrimBrush)
+                            .align(Alignment.TopEnd)
                             .statusBarsPadding()
+                            .padding(18.dp)
                     ) {
-                        PlezyTopBar(
-                            title = displayTitle,
-                            streamBadge = currentStream.detectedResolution,
-                            p2pPeers = p2pTelemetry?.connectedPeers ?: 0,
-                            isP2p = currentStream.infoHash != null,
-                            onBack = { appState.stopPlaybackAndSaveProgress(positionMs, durationMs) },
-                            onToggleZenMode = { showControls = false },
-                            onOpenExternal = { activeSheet = PlayerSheet.EXTERNAL },
-                            onOpenCast = { activeSheet = PlayerSheet.CAST },
-                            isDesktop = false
-                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.6f))
+                                .clickable {
+                                    isScreenLocked = false
+                                    showControls = true
+                                    hudInteractionTick++
+                                }
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.LockOpen, contentDescription = "Unlock", tint = Color.White, modifier = Modifier.size(18.dp))
+                                Text("Unlock", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
                     }
-                }
-
-                // Auto-hiding Plezy Minimal Bottom Bar
-                AnimatedVisibility(
-                    visible = showControls,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(BottomScrimBrush)
-                            .navigationBarsPadding()
+                } else {
+                    // 1. PLEZY TOP BAR (Clean borderless white icons over subtle dark top gradient)
+                    AnimatedVisibility(
+                        visible = showControls,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.align(Alignment.TopCenter)
                     ) {
-                        PlezyMinimalBottomBar(
-                            positionMs = seekPreviewMs ?: positionMs,
-                            durationMs = durationMs,
-                            isPlaying = isPlaying,
-                            hasNextEpisode = episode != null,
-                            volume = effectiveVolume,
-                            isMuted = isMuted,
-                            playbackSpeed = effectiveSpeed,
-                            aspectMode = aspectMode,
+                        PlezyTopHeader(
+                            title = media.name,
+                            subtitle = subtitleLine,
+                            isLocked = isScreenLocked,
+                            showLockIcon = true,
+                            showHideIcon = false,
                             subtitlesActive = subtitlesEnabled && (selectedSubtitle != null || cycleEmbeddedSubTick > 0),
-                            activeSkipSegment = activeSkipSegment,
-                            onSeek = { target ->
-                                positionMs = target
-                                requestedSeekMs = target
-                                hudInteractionTick++
-                            },
-                            onPlayPause = {
-                                isPlaying = !isPlaying
-                                hudInteractionTick++
-                            },
-                            onRewind10 = { performRelativeSeek(-10_000L) },
-                            onForward10 = { performRelativeSeek(10_000L) },
-                            onNextEpisode = { appState.playNextEpisodeInQueue() },
-                            onCycleBoost = {
-                                cycleVolumeBoost()
-                                hudInteractionTick++
-                            },
+                            isBoosted = !isMuted && volume > 1.02f,
+                            onBack = { appState.stopPlaybackAndSaveProgress(positionMs, durationMs) },
+                            onOpenAudioSpeed = { activeSheet = PlayerSheet.AUDIO_SPEED },
+                            onOpenSubtitles = { activeSheet = PlayerSheet.SUBTITLES },
                             onCycleAspect = {
                                 aspectIndex = (aspectIndex + 1) % aspectModes.size
                                 triggerHudFeedback("Aspect: ${aspectModes[aspectIndex].uppercase()}", icon = Icons.Default.AspectRatio)
                                 hudInteractionTick++
                             },
-                            onOpenSpeed = { activeSheet = PlayerSheet.SPEED },
-                            onOpenAudio = { activeSheet = PlayerSheet.AUDIO },
-                            onOpenSubtitles = { activeSheet = PlayerSheet.SUBTITLES },
-                            onSkipSegment = { seg ->
-                                positionMs = seg.endMs
-                                requestedSeekMs = seg.endMs
-                            }
+                            onToggleLock = {
+                                isScreenLocked = true
+                                showControls = false
+                            },
+                            onHideControls = {},
+                            onOpenExternal = { activeSheet = PlayerSheet.EXTERNAL },
+                            modifier = Modifier
+                                .background(PlezyTopScrim)
+                                .statusBarsPadding()
                         )
+                    }
+
+                    // 2. PLEZY FLOATING CENTER TRANSPORT CONTROLS (Matches Plezy Screenshot 4!)
+                    AnimatedVisibility(
+                        visible = showControls,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.align(Alignment.Center)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(26.dp)
+                        ) {
+                            // -10s circle
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.45f))
+                                    .clickable { performRelativeSeek(-10_000L) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FastRewind,
+                                    contentDescription = "-10s",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+
+                            // Big central Play / Pause circle
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.50f))
+                                    .clickable {
+                                        isPlaying = !isPlaying
+                                        hudInteractionTick++
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
+
+                            // +10s circle
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.45f))
+                                    .clickable { performRelativeSeek(10_000L) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FastForward,
+                                    contentDescription = "+10s",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+
+                            if (episode != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.45f))
+                                        .clickable { appState.playNextEpisodeInQueue() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SkipNext,
+                                        contentDescription = "Next Episode",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. PLEZY RAZOR-THIN BOTTOM SCRUBBER ONLY (Zero clutter, matches Screenshot 4!)
+                    AnimatedVisibility(
+                        visible = showControls,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(PlezyBottomScrim)
+                                .navigationBarsPadding()
+                                .padding(horizontal = 20.dp, vertical = 14.dp)
+                        ) {
+                            PlezyScrubberSection(
+                                positionMs = seekPreviewMs ?: positionMs,
+                                durationMs = durationMs,
+                                volume = effectiveVolume,
+                                isMuted = isMuted,
+                                playbackSpeed = effectiveSpeed,
+                                activeSkipSegment = activeSkipSegment,
+                                onSeek = { target ->
+                                    positionMs = target
+                                    requestedSeekMs = target
+                                    hudInteractionTick++
+                                },
+                                onSkipSegment = { seg ->
+                                    positionMs = seg.endMs
+                                    requestedSeekMs = seg.endMs
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -765,7 +917,6 @@ fun UnifiedVideoPlayerScreen(
                     title = "Subtitles",
                     onDismiss = { activeSheet = PlayerSheet.NONE }
                 ) {
-                    // Quick Off / Embedded Track Cycle row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -779,19 +930,18 @@ fun UnifiedVideoPlayerScreen(
                             }
                         )
                         ModernFilterPill(
-                            label = "Cycle Embedded Track",
+                            label = "Cycle Embedded Sub",
                             selected = false,
                             onClick = {
                                 subtitlesEnabled = true
                                 cycleEmbeddedSubTick++
-                                appState.showBanner("Cycled embedded subtitle track")
                             }
                         )
                     }
 
                     Spacer(Modifier.height(14.dp))
                     Text(
-                        "ADDON SUBTITLE TRACKS (${subtitles.size})",
+                        "ADDON SUBTITLES (${subtitles.size})",
                         style = MaterialTheme.typography.labelSmall,
                         color = NaphColors.TextMuted
                     )
@@ -799,7 +949,7 @@ fun UnifiedVideoPlayerScreen(
 
                     if (subtitles.isEmpty()) {
                         Text(
-                            "No external addon subtitles found for this stream. Use 'Cycle Embedded Track' above for built-in MKV/MP4 subtitles.",
+                            "No external addon subtitles found. Tap 'Cycle Embedded Sub' above for built-in MKV/MP4 tracks.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = NaphColors.TextSecondary
                         )
@@ -807,7 +957,7 @@ fun UnifiedVideoPlayerScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(160.dp)
+                                .height(155.dp)
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
@@ -841,9 +991,7 @@ fun UnifiedVideoPlayerScreen(
                                         Text(
                                             "${track.lang.uppercase()} • ${track.format.uppercase()}",
                                             color = NaphColors.TextMuted,
-                                            fontSize = 11.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            fontSize = 11.sp
                                         )
                                     }
                                     if (isSelected) {
@@ -858,7 +1006,6 @@ fun UnifiedVideoPlayerScreen(
                     HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                     Spacer(Modifier.height(12.dp))
 
-                    // Delay ±100ms
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -890,7 +1037,6 @@ fun UnifiedVideoPlayerScreen(
 
                     Spacer(Modifier.height(10.dp))
 
-                    // Font Size Slider
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -910,7 +1056,6 @@ fun UnifiedVideoPlayerScreen(
                         )
                     )
 
-                    // ASS/SSA styling toggle using high-contrast NaphSwitch
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -925,9 +1070,9 @@ fun UnifiedVideoPlayerScreen(
                 }
             }
 
-            PlayerSheet.AUDIO -> {
+            PlayerSheet.AUDIO_SPEED -> {
                 PlayerModalDialog(
-                    title = "Audio & Volume Boost",
+                    title = "Audio, Boost & Speed",
                     onDismiss = { activeSheet = PlayerSheet.NONE }
                 ) {
                     val pct = (effectiveVolume * 100f).roundToInt()
@@ -953,42 +1098,32 @@ fun UnifiedVideoPlayerScreen(
                         valueRange = 0f..1.5f,
                         colors = SliderDefaults.colors(
                             thumbColor = if (effectiveVolume > 1.01f) NaphColors.AmberWarn else Color.White,
-                            activeTrackColor = if (effectiveVolume > 1.01f) NaphColors.AmberWarn else NaphColors.CyanGlow,
+                            activeTrackColor = if (effectiveVolume > 1.01f) NaphColors.AmberWarn else Color.White,
                             inactiveTrackColor = Color.White.copy(alpha = 0.2f)
                         )
                     )
-                    Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ModernFilterPill(label = "Mute", selected = isMuted, onClick = { isMuted = !isMuted })
                         ModernFilterPill(label = "100%", selected = !isMuted && pct in 95..105, onClick = { isMuted = false; volume = 1.0f })
-                        ModernFilterPill(label = "125% Boost", selected = !isMuted && pct in 120..130, onClick = { isMuted = false; volume = 1.25f })
-                        ModernFilterPill(label = "150% Boost", selected = !isMuted && pct >= 145, onClick = { isMuted = false; volume = 1.5f })
+                        ModernFilterPill(label = "125%", selected = !isMuted && pct in 120..130, onClick = { isMuted = false; volume = 1.25f })
+                        ModernFilterPill(label = "150%", selected = !isMuted && pct >= 145, onClick = { isMuted = false; volume = 1.5f })
                     }
 
-                    Spacer(Modifier.height(16.dp))
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                     Spacer(Modifier.height(14.dp))
-
-                    Text("EMBEDDED AUDIO TRACKS", style = MaterialTheme.typography.labelSmall, color = NaphColors.TextMuted)
-                    Spacer(Modifier.height(8.dp))
                     ModernPrimaryButton(
                         text = "Cycle Audio Track (MPV)",
                         icon = Icons.Default.Audiotrack,
-                        onClick = {
-                            cycleAudioTick++
-                            appState.showBanner("Switched audio track")
-                        },
+                        onClick = { cycleAudioTick++ },
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
-            }
 
-            PlayerSheet.SPEED -> {
-                PlayerModalDialog(
-                    title = "Playback Speed",
-                    onDismiss = { activeSheet = PlayerSheet.NONE }
-                ) {
-                    val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f, 4.0f)
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    Spacer(Modifier.height(12.dp))
+
+                    Text("PLAYBACK SPEED", style = MaterialTheme.typography.labelSmall, color = NaphColors.TextMuted)
+                    Spacer(Modifier.height(8.dp))
+                    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         speeds.chunked(3).forEach { row ->
                             Row(
@@ -996,15 +1131,11 @@ fun UnifiedVideoPlayerScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 row.forEach { spd ->
-                                    val selected = abs(baseSpeed - spd) < 0.01f
                                     Box(modifier = Modifier.weight(1f)) {
                                         ModernFilterPill(
                                             label = "${spd}x",
-                                            selected = selected,
-                                            onClick = {
-                                                baseSpeed = spd
-                                                activeSheet = PlayerSheet.NONE
-                                            },
+                                            selected = abs(baseSpeed - spd) < 0.01f,
+                                            onClick = { baseSpeed = spd },
                                             modifier = Modifier.fillMaxWidth()
                                         )
                                     }
@@ -1028,32 +1159,7 @@ fun UnifiedVideoPlayerScreen(
                                 text = "Open in $playerName",
                                 icon = Icons.AutoMirrored.Filled.OpenInNew,
                                 onClick = {
-                                    val ok = launchExternalPlayer(playerName, url, displayTitle)
-                                    appState.showBanner(
-                                        if (ok) "Launched $playerName" else "$playerName is not installed on this device"
-                                    )
-                                    activeSheet = PlayerSheet.NONE
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                }
-            }
-
-            PlayerSheet.CAST -> {
-                PlayerModalDialog(
-                    title = "Cast & AirPlay",
-                    onDismiss = { activeSheet = PlayerSheet.NONE }
-                ) {
-                    val devices = listOf("Living Room Apple TV", "Bedroom Chromecast", "Smart TV (DLNA)")
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        devices.forEach { dev ->
-                            ModernGlassButton(
-                                text = dev,
-                                icon = Icons.Default.Cast,
-                                onClick = {
-                                    appState.showBanner("Casting '${media.name}' to $dev")
+                                    launchExternalPlayer(playerName, url, media.name)
                                     activeSheet = PlayerSheet.NONE
                                 },
                                 modifier = Modifier.fillMaxWidth()
@@ -1069,236 +1175,188 @@ fun UnifiedVideoPlayerScreen(
 }
 
 @Composable
-private fun PlezyTopBar(
+private fun PlezyTopHeader(
     title: String,
-    streamBadge: String,
-    p2pPeers: Int,
-    isP2p: Boolean,
+    subtitle: String,
+    isLocked: Boolean,
+    showLockIcon: Boolean,
+    showHideIcon: Boolean,
+    subtitlesActive: Boolean,
+    isBoosted: Boolean,
     onBack: () -> Unit,
-    onToggleZenMode: () -> Unit,
+    onOpenAudioSpeed: () -> Unit,
+    onOpenSubtitles: () -> Unit,
+    onCycleAspect: () -> Unit,
+    onToggleLock: () -> Unit,
+    onHideControls: () -> Unit,
     onOpenExternal: () -> Unit,
-    onOpenCast: () -> Unit,
-    isDesktop: Boolean
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .background(if (isDesktop) Color(0xFF0A0D14) else Color.Transparent)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.12f))
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(18.dp))
-        }
+        // Borderless clean white back arrow (exact Plezy style)
+        PlezyCleanIconButton(
+            icon = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "Back",
+            iconSize = 22.dp,
+            onClick = onBack
+        )
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 color = Color.White,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = streamBadge,
-                    color = NaphColors.CyanGlow,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                if (isP2p) {
-                    Text(
-                        text = "• P2P ($p2pPeers peers)",
-                        color = NaphColors.EmeraldSeed,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
+            Text(
+                text = subtitle,
+                color = Color.White.copy(alpha = 0.72f),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
-        if (isDesktop) {
-            PlezyIconChip(icon = Icons.Default.Fullscreen, contentDescription = "Hide Controls (F)", onClick = onToggleZenMode)
+        // Clean borderless white action icons (exact Plezy top-right icon row)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            PlezyCleanIconButton(
+                icon = Icons.Default.Tune,
+                contentDescription = "Audio, Boost & Speed",
+                tint = if (isBoosted) NaphColors.AmberWarn else Color.White,
+                onClick = onOpenAudioSpeed
+            )
+            PlezyCleanIconButton(
+                icon = Icons.Default.Subtitles,
+                contentDescription = "Subtitles",
+                tint = if (subtitlesActive) NaphColors.CyanGlow else Color.White,
+                onClick = onOpenSubtitles
+            )
+            PlezyCleanIconButton(
+                icon = Icons.Default.AspectRatio,
+                contentDescription = "Aspect Ratio",
+                onClick = onCycleAspect
+            )
+            if (showHideIcon) {
+                PlezyCleanIconButton(
+                    icon = Icons.Default.Fullscreen,
+                    contentDescription = "Hide Controls",
+                    onClick = onHideControls
+                )
+            }
+            if (showLockIcon) {
+                PlezyCleanIconButton(
+                    icon = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                    contentDescription = "Lock Screen",
+                    onClick = onToggleLock
+                )
+            }
+            PlezyCleanIconButton(
+                icon = Icons.AutoMirrored.Filled.OpenInNew,
+                contentDescription = "External Player",
+                onClick = onOpenExternal
+            )
         }
-        PlezyIconChip(icon = Icons.Default.Cast, contentDescription = "Cast", onClick = onOpenCast)
-        PlezyIconChip(icon = Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "External Player", onClick = onOpenExternal)
     }
 }
 
 @Composable
-private fun PlezyMinimalBottomBar(
+private fun PlezyScrubberSection(
     positionMs: Long,
     durationMs: Long,
-    isPlaying: Boolean,
-    hasNextEpisode: Boolean,
     volume: Float,
     isMuted: Boolean,
     playbackSpeed: Float,
-    aspectMode: String,
-    subtitlesActive: Boolean,
     activeSkipSegment: SkipSegment?,
     onSeek: (Long) -> Unit,
-    onPlayPause: () -> Unit,
-    onRewind10: () -> Unit,
-    onForward10: () -> Unit,
-    onNextEpisode: () -> Unit,
-    onCycleBoost: () -> Unit,
-    onCycleAspect: () -> Unit,
-    onOpenSpeed: () -> Unit,
-    onOpenAudio: () -> Unit,
-    onOpenSubtitles: () -> Unit,
     onSkipSegment: (SkipSegment) -> Unit
 ) {
     val safeDuration = durationMs.coerceAtLeast(1L)
     val fraction = (positionMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
     val remainingMs = (durationMs - positionMs).coerceAtLeast(0L)
     val volPct = (volume * 100f).roundToInt()
-    val isBoosted = !isMuted && volPct > 100
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(if (isDesktopAwtHost) Color(0xFF0A0D14) else Color.Transparent)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Optional Skip Intro / Credits pill floating just above scrubber
         if (activeSkipSegment != null) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(NaphColors.ElectricPrimary)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White.copy(alpha = 0.18f))
+                        .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
                         .clickable { onSkipSegment(activeSkipSegment) }
                         .padding(horizontal = 14.dp, vertical = 7.dp)
                 ) {
                     Text(
                         text = activeSkipSegment.type.label,
                         color = Color.White,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         fontSize = 12.sp
                     )
                 }
             }
         }
 
-        // Slim Plezy Scrubber Row with elapsed / remaining timestamps
+        // Custom Razor-Thin Plezy Scrubber (3.5dp track + vertical white pill thumb — NO chunky Material3 Slider!)
+        PlezyRazorScrubber(
+            fraction = fraction,
+            onSeekFraction = { newFrac ->
+                if (durationMs > 0L) {
+                    onSeek((newFrac * durationMs).toLong())
+                }
+            }
+        )
+
+        // Clean elapsed (left) and remaining (right) timestamps directly below the bar
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = formatPlayerTime(positionMs),
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
             )
-            Slider(
-                value = fraction,
-                onValueChange = { newFrac ->
-                    if (durationMs > 0L) {
-                        onSeek((newFrac * durationMs).toLong())
-                    }
-                },
-                modifier = Modifier.weight(1f).height(22.dp),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.White,
-                    activeTrackColor = Color.White,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.24f)
-                )
-            )
-            Text(
-                text = "-${formatPlayerTime(remainingMs)}",
-                color = Color.White.copy(alpha = 0.72f),
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace
-            )
-        }
-
-        // Plezy Minimal Transport & Quick Actions Row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Transport Controls
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                PlezyIconChip(icon = Icons.Default.FastRewind, contentDescription = "-10s", onClick = onRewind10)
-
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(Color.White)
-                        .clickable(onClick = onPlayPause),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = Color.Black,
-                        modifier = Modifier.size(22.dp)
+                if (!isMuted && volPct > 102) {
+                    Text(
+                        text = "${volPct}%",
+                        color = NaphColors.AmberWarn,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
-
-                PlezyIconChip(icon = Icons.Default.FastForward, contentDescription = "+10s", onClick = onForward10)
-
-                if (hasNextEpisode) {
-                    PlezyIconChip(icon = Icons.Default.SkipNext, contentDescription = "Next Episode", onClick = onNextEpisode)
+                if (abs(playbackSpeed - 1.0f) > 0.01f) {
+                    Text(
+                        text = "${playbackSpeed}x",
+                        color = NaphColors.CyanGlow,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
-            }
-
-            // Minimal Action Pills (scrollable on narrow iPhones so nothing ever clips)
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                PlezyTextPill(
-                    label = if (isBoosted) "${volPct}%" else "Boost",
-                    active = isBoosted,
-                    activeColor = NaphColors.AmberWarn,
-                    onClick = onCycleBoost
-                )
-                PlezyTextPill(
-                    label = "${playbackSpeed}x",
-                    active = abs(playbackSpeed - 1.0f) > 0.01f,
-                    activeColor = NaphColors.CyanGlow,
-                    onClick = onOpenSpeed
-                )
-                PlezyTextPill(
-                    label = aspectMode.uppercase(),
-                    active = aspectMode != "fit",
-                    activeColor = NaphColors.CyanGlow,
-                    onClick = onCycleAspect
-                )
-                PlezyIconChip(
-                    icon = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.Default.Audiotrack,
-                    contentDescription = "Audio & Boost",
-                    highlighted = isBoosted,
-                    onClick = onOpenAudio
-                )
-                PlezyIconChip(
-                    icon = Icons.Default.Subtitles,
-                    contentDescription = "Subtitles",
-                    highlighted = subtitlesActive,
-                    onClick = onOpenSubtitles
+                Text(
+                    text = "-${formatPlayerTime(remainingMs)}",
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
                 )
             }
         }
@@ -1306,60 +1364,104 @@ private fun PlezyMinimalBottomBar(
 }
 
 @Composable
-private fun PlezyIconChip(
+private fun PlezyRazorScrubber(
+    fraction: Float,
+    onSeekFraction: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var widthPx by remember { mutableStateOf(1f) }
+    var dragFraction by remember { mutableStateOf<Float?>(null) }
+    val displayFrac = (dragFraction ?: fraction).coerceIn(0f, 1f)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(26.dp)
+            .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
+            .pointerInput(widthPx) {
+                detectTapGestures { offset ->
+                    onSeekFraction((offset.x / widthPx).coerceIn(0f, 1f))
+                }
+            }
+            .pointerInput(widthPx) {
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        dragFraction = (offset.x / widthPx).coerceIn(0f, 1f)
+                    },
+                    onDragEnd = {
+                        dragFraction?.let { onSeekFraction(it) }
+                        dragFraction = null
+                    },
+                    onDragCancel = {
+                        dragFraction = null
+                    },
+                    onHorizontalDrag = { change, _ ->
+                        change.consume()
+                        val f = (change.position.x / widthPx).coerceIn(0f, 1f)
+                        dragFraction = f
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxWidth().height(20.dp)) {
+            val trackHeight = 3.5.dp.toPx()
+            val centerY = size.height / 2f
+            val corner = CornerRadius(trackHeight / 2f, trackHeight / 2f)
+
+            // Inactive track
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.30f),
+                topLeft = Offset(0f, centerY - trackHeight / 2f),
+                size = Size(size.width, trackHeight),
+                cornerRadius = corner
+            )
+
+            // Active progress fill
+            val activeW = (size.width * displayFrac).coerceIn(0f, size.width)
+            if (activeW > 0f) {
+                drawRoundRect(
+                    color = Color.White,
+                    topLeft = Offset(0f, centerY - trackHeight / 2f),
+                    size = Size(activeW, trackHeight),
+                    cornerRadius = corner
+                )
+            }
+
+            // Sleek Plezy vertical white pill handle (3dp × 16dp)
+            val thumbW = 3.dp.toPx()
+            val thumbH = 16.dp.toPx()
+            val thumbX = activeW.coerceIn(thumbW / 2f, size.width - thumbW / 2f) - thumbW / 2f
+            drawRoundRect(
+                color = Color.White,
+                topLeft = Offset(thumbX, centerY - thumbH / 2f),
+                size = Size(thumbW, thumbH),
+                cornerRadius = CornerRadius(thumbW / 2f, thumbW / 2f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlezyCleanIconButton(
     icon: ImageVector,
     contentDescription: String,
-    highlighted: Boolean = false,
+    tint: Color = Color.White,
+    iconSize: androidx.compose.ui.unit.Dp = 21.dp,
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .size(34.dp)
             .clip(CircleShape)
-            .background(if (highlighted) NaphColors.CyanGlow.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.1f))
-            .border(
-                1.dp,
-                if (highlighted) NaphColors.CyanGlow.copy(alpha = 0.65f) else Color.White.copy(alpha = 0.12f),
-                CircleShape
-            )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (highlighted) NaphColors.CyanGlow else Color.White,
-            modifier = Modifier.size(18.dp)
-        )
-    }
-}
-
-@Composable
-private fun PlezyTextPill(
-    label: String,
-    active: Boolean,
-    activeColor: Color,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .height(34.dp)
-            .clip(RoundedCornerShape(17.dp))
-            .background(if (active) activeColor.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f))
-            .border(
-                1.dp,
-                if (active) activeColor.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.12f),
-                RoundedCornerShape(17.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 11.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = label,
-            color = if (active) activeColor else Color.White.copy(alpha = 0.92f),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
+            tint = tint,
+            modifier = Modifier.size(iconSize)
         )
     }
 }
@@ -1377,7 +1479,7 @@ private fun PlayerModalDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f))
+                .background(Color.Black.copy(alpha = 0.62f))
                 .clickable(onClick = onDismiss)
                 .padding(20.dp),
             contentAlignment = Alignment.Center
@@ -1386,9 +1488,9 @@ private fun PlayerModalDialog(
                 modifier = Modifier
                     .widthIn(max = 460.dp)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(22.dp))
+                    .clip(RoundedCornerShape(20.dp))
                     .background(Color(0xF5111622))
-                    .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(22.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(20.dp))
                     .clickable(enabled = false) {}
                     .padding(20.dp)
             ) {
@@ -1403,16 +1505,12 @@ private fun PlayerModalDialog(
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.1f))
-                            .clickable(onClick = onDismiss),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(16.dp))
-                    }
+                    PlezyCleanIconButton(
+                        icon = Icons.Default.Close,
+                        contentDescription = "Close",
+                        iconSize = 18.dp,
+                        onClick = onDismiss
+                    )
                 }
                 Spacer(Modifier.height(14.dp))
                 content()
@@ -1442,12 +1540,12 @@ private fun P2pBufferingOverlay(
                 imageVector = Icons.Default.CloudQueue,
                 contentDescription = null,
                 tint = NaphColors.CyanGlow,
-                modifier = Modifier.size(38.dp)
+                modifier = Modifier.size(36.dp)
             )
             CircularProgressIndicator(
-                color = NaphColors.CyanGlow,
-                trackColor = Color.White.copy(alpha = 0.15f),
-                modifier = Modifier.size(34.dp)
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.18f),
+                modifier = Modifier.size(32.dp)
             )
             Text(
                 text = title,
@@ -1471,7 +1569,10 @@ private fun formatPlayerTime(ms: Long): String {
     val hours = totalSeconds / 3600L
     val minutes = (totalSeconds % 3600L) / 60L
     val seconds = totalSeconds % 60L
-    val mm = minutes.toString().padStart(2, '0')
     val ss = seconds.toString().padStart(2, '0')
-    return if (hours > 0L) "$hours:$mm:$ss" else "$mm:$ss"
+    return if (hours > 0L) {
+        "$hours:${minutes.toString().padStart(2, '0')}:$ss"
+    } else {
+        "$minutes:$ss"
+    }
 }

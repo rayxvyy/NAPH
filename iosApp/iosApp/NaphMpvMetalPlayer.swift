@@ -17,6 +17,8 @@ final class NaphMetalVideoView: UIView {
         super.init(frame: frame)
         backgroundColor = .black
         isUserInteractionEnabled = false
+        clipsToBounds = true
+        autoresizingMask = [.flexibleWidth, .flexibleHeight]
         metalLayer.contentsScale = UIScreen.main.scale
         metalLayer.framebufferOnly = true
         metalLayer.pixelFormat = .bgra8Unorm
@@ -26,20 +28,63 @@ final class NaphMetalVideoView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func syncDrawableSize() {
+        let scale = window?.screen.scale ?? UIScreen.main.scale
+        let w = max(1, bounds.width * scale)
+        let h = max(1, bounds.height * scale)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        metalLayer.contentsScale = scale
+        if metalLayer.drawableSize.width != w || metalLayer.drawableSize.height != h {
+            metalLayer.drawableSize = CGSize(width: w, height: h)
+        }
+        CATransaction.commit()
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
-        metalLayer.frame = bounds
-        metalLayer.drawableSize = CGSize(
-            width: max(1, bounds.width * metalLayer.contentsScale),
-            height: max(1, bounds.height * metalLayer.contentsScale)
-        )
+        syncDrawableSize()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        syncDrawableSize()
+    }
+}
+
+/// Clipping container view so portrait <-> landscape rotation ALWAYS pins the Metal surface to exact bounds
+final class NaphVideoContainerView: UIView {
+    let metalView = NaphMetalVideoView(frame: .zero)
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        clipsToBounds = true
+        isUserInteractionEnabled = false
+        autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        metalView.frame = bounds
+        addSubview(metalView)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        metalView.frame = bounds
+        metalView.syncDrawableSize()
+        CATransaction.commit()
     }
 }
 
 /// Real Nuvio MPVKit (`libmpv` + `MoltenVK` + `VideoToolbox` + `libass` + `libdovi`) iOS Player Controller
 /// Plays MKV, HEVC, Dolby Vision, HDR10, AV1, TrueHD, EAC3, DTS, ASS/SSA subtitles, and local P2P streams natively on iPhone!
 final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
-    private let metalView = NaphMetalVideoView(frame: UIScreen.main.bounds)
+    private let containerView = NaphVideoContainerView(frame: UIScreen.main.bounds)
+    private var metalView: NaphMetalVideoView { containerView.metalView }
     private var mpv: OpaquePointer?
     private let queue = DispatchQueue(label: "com.naph.ios.mpv", qos: .userInitiated)
     private var isInitialized = false
@@ -47,7 +92,7 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
     private var pendingPlaying: Bool = true
 
     var view: UIView {
-        return metalView
+        return containerView
     }
 
     override init() {

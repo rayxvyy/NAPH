@@ -228,6 +228,10 @@ actual fun NativeVideoSurface(
             factory = {
                 mpvController?.view ?: avPlayerViewController!!.view
             },
+            update = { view ->
+                view.setNeedsLayout()
+                view.layoutIfNeeded()
+            },
             modifier = Modifier.fillMaxSize()
         )
     }

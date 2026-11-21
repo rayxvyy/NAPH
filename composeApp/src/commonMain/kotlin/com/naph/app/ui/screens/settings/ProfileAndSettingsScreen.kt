@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -698,6 +700,7 @@ private fun AppearanceSubPage(appState: NaphAppState) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LayoutCustomizationSubPage(appState: NaphAppState) {
     val config by appState.layoutConfig.collectAsState()
@@ -747,12 +750,15 @@ private fun LayoutCustomizationSubPage(appState: NaphAppState) {
                 modifier = Modifier.padding(22.dp)
             ) {
                 Text("Poster Card Width", style = MaterialTheme.typography.titleMedium, color = Color.White)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     PosterCardSizePreset.entries.forEach { sizePreset ->
                         FilterChip(
                             selected = config.posterSizePreset == sizePreset,
                             onClick = { appState.updateLayoutConfig(config.copy(posterSizePreset = sizePreset)) },
-                            label = { Text(sizePreset.label) }
+                            label = { Text(sizePreset.label, maxLines = 1, softWrap = false) }
                         )
                     }
                 }
@@ -904,6 +910,7 @@ private fun ContentDiscoverySubPage(appState: NaphAppState) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AddonsManagerSubPage(appState: NaphAppState) {
     val addons by appState.installedAddons.collectAsState()
@@ -964,7 +971,10 @@ private fun AddonsManagerSubPage(appState: NaphAppState) {
                     style = MaterialTheme.typography.labelSmall,
                     color = NaphColors.TextSecondary
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     listOf(
                         "Cinemeta Catalogs" to "https://v3-cinemeta.strem.io/manifest.json",
                         "CyberFlix Catalogs" to "https://cyberflix.elfhosted.com/manifest.json",
@@ -975,7 +985,7 @@ private fun AddonsManagerSubPage(appState: NaphAppState) {
                             onClick = { appState.installAddonByManifestUrl(url) },
                             enabled = !isInstalling
                         ) {
-                            Text("+ $label", color = NaphColors.CyanGlow, fontSize = 12.sp)
+                            Text("+ $label", color = NaphColors.CyanGlow, fontSize = 12.sp, maxLines = 1, softWrap = false)
                         }
                     }
                 }
