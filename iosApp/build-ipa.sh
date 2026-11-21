@@ -30,6 +30,7 @@ xcrun --sdk iphoneos swiftc \
   -target arm64-apple-ios15.0 \
   -sdk "$SDK_PATH" \
   -O \
+  -parse-as-library \
   -F "$FRAMEWORK_DIR" \
   -framework ComposeApp \
   -framework UIKit \
@@ -46,11 +47,16 @@ xcrun --sdk iphoneos swiftc \
   -framework AudioToolbox \
   -framework Security \
   -framework CFNetwork \
+  -framework CoreVideo \
+  -framework SystemConfiguration \
+  -framework Network \
+  -framework UniformTypeIdentifiers \
+  -framework MobileCoreServices \
+  -framework GameController \
   -lsqlite3 \
   -lc++ \
   -lz \
   "$SCRIPT_DIR/iosApp/iOSApp.swift" \
-  "$SCRIPT_DIR/iosApp/NaphTorrentBridge.swift" \
   -o "$APP_DIR/NAPH"
 
 chmod +x "$APP_DIR/NAPH"

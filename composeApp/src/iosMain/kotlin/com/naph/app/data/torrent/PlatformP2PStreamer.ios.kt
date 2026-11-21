@@ -163,7 +163,7 @@ actual object PlatformP2PStreamer {
             if (!stream.url.isNullOrBlank()) {
                 onStreamReady(stream.url)
             } else {
-                onStreamError("iOS P2P Engine: Initializing local BitTorrent stream route for $hash")
+                onStreamError("Torrent streams on iOS need a TorrServer URL (Settings → Playback) or a Debrid account for now.")
             }
         }
     }

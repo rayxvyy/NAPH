@@ -21,17 +21,14 @@ struct ContentView: View {
 @main
 struct NaphIOSApp: App {
     init() {
-        // 1. Configure iOS AVAudioSession for Cinema Playback & AirPlay 2
+        // Playback audio session so video keeps sound with the silent switch on, plus AirPlay
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay, .allowBluetoothA2DP])
+            try session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
             try session.setActive(true)
         } catch {
-            print("NAPH iOS AudioSession warning: \(error)")
+            print("NAPH audio session error: \(error)")
         }
-
-        // 2. Register Native iOS Sequential BitTorrent Engine Bridge with shared KMP PlatformP2PStreamer
-        NaphIosTorrentEngine.registerWithSharedEngine()
     }
 
     var body: some Scene {

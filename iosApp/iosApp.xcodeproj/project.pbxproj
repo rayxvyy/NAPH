@@ -8,14 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		B10000012B00000100000001 /* iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000022B00000100000001 /* iOSApp.swift */; };
-		B10000032B00000100000001 /* NaphTorrentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000042B00000100000001 /* NaphTorrentBridge.swift */; };
 		B10000052B00000100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000062B00000100000001 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		B10000002B00000100000001 /* NAPH.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NAPH.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000022B00000100000001 /* iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSApp.swift; sourceTree = "<group>"; };
-		B10000042B00000100000001 /* NaphTorrentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NaphTorrentBridge.swift; sourceTree = "<group>"; };
 		B10000062B00000100000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B10000072B00000100000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -43,7 +41,6 @@
 			isa = PBXGroup;
 			children = (
 				B10000022B00000100000001 /* iOSApp.swift */,
-				B10000042B00000100000001 /* NaphTorrentBridge.swift */,
 				B10000062B00000100000001 /* Assets.xcassets */,
 				B10000072B00000100000001 /* Info.plist */,
 			);
@@ -123,7 +120,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				B10000012B00000100000001 /* iOSApp.swift in Sources */,
-				B10000032B00000100000001 /* NaphTorrentBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
