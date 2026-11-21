@@ -1,9 +1,14 @@
 package com.naph.app.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,15 +18,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +42,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -47,10 +56,125 @@ import coil3.request.ImageRequest
 import coil3.size.Precision
 import com.naph.app.ui.theme.NaphColors
 
+// Pre-cached Brushes & Shapes (Zero per-frame allocations during 120Hz / 120fps scrolling!)
+private val CachedLiquidGlassBorder = Brush.verticalGradient(
+    colors = listOf(
+        Color.White.copy(alpha = 0.28f),
+        Color.White.copy(alpha = 0.07f),
+        Color.White.copy(alpha = 0.15f)
+    )
+)
+
+private val CachedLiquidGlassFill = Brush.verticalGradient(
+    colors = listOf(
+        Color(0xD9171C2A),
+        Color(0xCC0D1018)
+    )
+)
+
+private val CachedGlassButtonFill = Brush.verticalGradient(
+    colors = listOf(
+        Color(0xE021283B),
+        Color(0xD4131724)
+    )
+)
+
+private val CachedFloatingBarFill = Brush.verticalGradient(
+    colors = listOf(
+        Color(0xF01C2234),
+        Color(0xE60D111B)
+    )
+)
+
+private val CachedActiveTabFill = Brush.verticalGradient(
+    colors = listOf(
+        Color.White.copy(alpha = 0.24f),
+        Color.White.copy(alpha = 0.10f)
+    )
+)
+
+private val CachedIconPillFill = Brush.verticalGradient(
+    colors = listOf(
+        Color(0xD9242B3E),
+        Color(0xC9121622)
+    )
+)
+
+private val Shape10 = RoundedCornerShape(10.dp)
+private val Shape12 = RoundedCornerShape(12.dp)
+private val Shape16 = RoundedCornerShape(16.dp)
+private val Shape18 = RoundedCornerShape(18.dp)
+private val Shape22 = RoundedCornerShape(22.dp)
+private val Shape28 = RoundedCornerShape(28.dp)
+
+fun liquidGlassBorderBrush(accentColor: Color? = null): Brush =
+    if (accentColor == null) {
+        CachedLiquidGlassBorder
+    } else {
+        Brush.verticalGradient(
+            colors = listOf(
+                accentColor.copy(alpha = 0.72f),
+                accentColor.copy(alpha = 0.24f),
+                accentColor.copy(alpha = 0.45f)
+            )
+        )
+    }
+
+fun liquidGlassFillBrush(): Brush = CachedLiquidGlassFill
+
 /**
- * Hardware-friendly downsampled network image loader:
- * - Decodes posters at compact thumbnail pixel dimensions (e.g. 240x360 instead of 2000x3000)
- * - Caches decoded bitmaps in memory & disk so scrolling LazyColumn / LazyRow is 60-120 FPS instant.
+ * High-Contrast Custom Toggle Switch:
+ * Clearly visible in BOTH OFF and ON states across all themes & AMOLED black mode!
+ */
+@Composable
+fun NaphSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val trackColor by animateColorAsState(
+        targetValue = if (checked) primary else Color(0xFF2D3548),
+        animationSpec = tween(160, easing = FastOutSlowInEasing),
+        label = "switch_track"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (checked) primary else Color(0xFF64748B),
+        animationSpec = tween(160, easing = FastOutSlowInEasing),
+        label = "switch_border"
+    )
+    val thumbOffset by animateDpAsState(
+        targetValue = if (checked) 22.dp else 3.dp,
+        animationSpec = tween(160, easing = FastOutSlowInEasing),
+        label = "switch_thumb"
+    )
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Box(
+        contentAlignment = Alignment.CenterStart,
+        modifier = modifier
+            .width(48.dp)
+            .height(28.dp)
+            .clip(CircleShape)
+            .background(trackColor)
+            .border(1.2.dp, borderColor, CircleShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onCheckedChange(!checked) }
+    ) {
+        Box(
+            modifier = Modifier
+                .offset(x = thumbOffset)
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(if (checked) Color.White else Color(0xFFE2E8F0))
+        )
+    }
+}
+
+/**
+ * Hardware-friendly downsampled network image loader for locked 120Hz scrolling.
  */
 @Composable
 fun FastNetworkImage(
@@ -82,33 +206,7 @@ fun FastNetworkImage(
 }
 
 /**
- * Apple Liquid Glass Specular Rim Brush (top-edge glass refraction sheen)
- */
-fun liquidGlassBorderBrush(accentColor: Color? = null): Brush = Brush.verticalGradient(
-    colors = if (accentColor != null) {
-        listOf(
-            accentColor.copy(alpha = 0.65f),
-            accentColor.copy(alpha = 0.22f),
-            accentColor.copy(alpha = 0.40f)
-        )
-    } else {
-        listOf(
-            Color.White.copy(alpha = 0.26f),
-            Color.White.copy(alpha = 0.06f),
-            Color.White.copy(alpha = 0.14f)
-        )
-    }
-)
-
-fun liquidGlassFillBrush(): Brush = Brush.verticalGradient(
-    colors = listOf(
-        Color(0xD6171C2A),
-        Color(0xCC0D1018)
-    )
-)
-
-/**
- * Liquid Glass Card Container (Translucent Frosted Surface + Specular Refraction Rim)
+ * Liquid Glass Card Container (Pre-cached brushes for zero-jank 120Hz scrolling)
  */
 @Composable
 fun LiquidGlassCard(
@@ -116,101 +214,111 @@ fun LiquidGlassCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val shape = remember(cornerRadius) {
+        when (cornerRadius) {
+            16.dp -> Shape16
+            18.dp -> Shape18
+            else -> RoundedCornerShape(cornerRadius)
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(liquidGlassFillBrush())
-            .border(1.dp, liquidGlassBorderBrush(), shape),
+            .background(CachedLiquidGlassFill)
+            .border(1.dp, CachedLiquidGlassBorder, shape),
         content = content
     )
 }
 
 /**
- * Apple iOS Liquid Glass Floating Capsule Navigation Bar
- * Floats cleanly above the iPhone home indicator with specular top refraction & luminous active pill.
+ * Apple iOS Liquid Glass Floating Capsule Navigation Bar with Native Auto-Shrink on Scroll:
+ * - Scrolling UP / at top: full floating glass capsule (62.dp height, icons + labels)
+ * - Scrolling DOWN: smoothly shrinks into a compact minimal pill (44.dp height, 212.dp width, icons-only)
  */
 @Composable
 fun <T> LiquidGlassFloatingNavBar(
     items: List<T>,
     selectedItem: T,
+    isMinimized: Boolean,
     labelOf: (T) -> String,
     iconOf: (T) -> ImageVector,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val capsuleShape = RoundedCornerShape(28.dp)
+    val barHeight by animateDpAsState(
+        targetValue = if (isMinimized) 44.dp else 60.dp,
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        label = "nav_bar_height"
+    )
+    val maxBarWidth by animateDpAsState(
+        targetValue = if (isMinimized) 216.dp else 460.dp,
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        label = "nav_bar_width"
+    )
+    val verticalPad by animateDpAsState(
+        targetValue = if (isMinimized) 6.dp else 10.dp,
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        label = "nav_bar_pad"
+    )
+
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 10.dp)
+            .padding(horizontal = 18.dp, vertical = verticalPad)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly,
             modifier = Modifier
+                .widthIn(max = maxBarWidth)
                 .fillMaxWidth()
-                .height(62.dp)
-                .clip(capsuleShape)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xEB1A2030),
-                            Color(0xE00C0F18)
-                        )
-                    )
-                )
-                .border(1.dp, liquidGlassBorderBrush(), capsuleShape)
-                .padding(horizontal = 6.dp, vertical = 5.dp)
+                .height(barHeight)
+                .graphicsLayer { clip = true; shape = Shape28 }
+                .background(CachedFloatingBarFill)
+                .border(1.dp, CachedLiquidGlassBorder, Shape28)
+                .padding(horizontal = 5.dp, vertical = 4.dp)
         ) {
             items.forEach { item ->
                 val isSelected = item == selectedItem
-                val pillShape = RoundedCornerShape(22.dp)
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                     modifier = Modifier
                         .weight(1f)
-                        .height(50.dp)
-                        .clip(pillShape)
-                        .background(
+                        .height(if (isMinimized) 36.dp else 50.dp)
+                        .clip(Shape22)
+                        .then(
                             if (isSelected) {
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.22f),
-                                        Color.White.copy(alpha = 0.09f)
-                                    )
-                                )
+                                Modifier
+                                    .background(CachedActiveTabFill)
+                                    .border(0.8.dp, Color.White.copy(alpha = 0.25f), Shape22)
                             } else {
-                                Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+                                Modifier
                             }
-                        )
-                        .border(
-                            width = if (isSelected) 0.8.dp else 0.dp,
-                            color = if (isSelected) Color.White.copy(alpha = 0.25f) else Color.Transparent,
-                            shape = pillShape
                         )
                         .clickable { onSelect(item) }
                 ) {
                     Icon(
                         imageVector = iconOf(item),
                         contentDescription = labelOf(item),
-                        tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.58f),
-                        modifier = Modifier.size(20.dp)
+                        tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.62f),
+                        modifier = Modifier.size(if (isMinimized) 18.dp else 20.dp)
                     )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = labelOf(item),
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 10.sp,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
-                        ),
-                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.58f),
-                        maxLines = 1
-                    )
+                    if (!isMinimized) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = labelOf(item),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 10.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                            ),
+                            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.62f),
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
@@ -291,7 +399,7 @@ fun NaphBrandIcon(
 }
 
 /**
- * Sleek Modern Primary Action Pill
+ * High-Contrast Modern Primary Action Pill
  */
 @Composable
 fun ModernPrimaryButton(
@@ -303,13 +411,12 @@ fun ModernPrimaryButton(
     height: Dp = 38.dp,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(12.dp)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
         modifier = modifier
             .height(height)
-            .clip(shape)
+            .clip(Shape12)
             .background(containerColor)
             .clickable { onClick() }
             .padding(horizontal = 16.dp)
@@ -336,7 +443,7 @@ fun ModernPrimaryButton(
 }
 
 /**
- * Apple Liquid Glass Pill Button (Translucent Frosted Glass + Specular Refraction Rim)
+ * High-Contrast Liquid Glass Pill Button
  */
 @Composable
 fun ModernGlassButton(
@@ -349,32 +456,22 @@ fun ModernGlassButton(
     height: Dp = 38.dp,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(12.dp)
-    val bgBrush = if (isActive) {
-        Brush.verticalGradient(
-            colors = listOf(
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-            )
-        )
-    } else {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xD91D2333),
-                Color(0xCC111520)
-            )
-        )
+    val primary = MaterialTheme.colorScheme.primary
+    val borderBrush = remember(isActive, primary) {
+        if (isActive) liquidGlassBorderBrush(primary) else CachedLiquidGlassBorder
     }
-    val borderBrush = liquidGlassBorderBrush(if (isActive) MaterialTheme.colorScheme.primary else null)
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
         modifier = modifier
             .height(height)
-            .clip(shape)
-            .background(bgBrush)
-            .border(1.dp, borderBrush, shape)
+            .clip(Shape12)
+            .then(
+                if (isActive) Modifier.background(primary.copy(alpha = 0.28f))
+                else Modifier.background(CachedGlassButtonFill)
+            )
+            .border(1.dp, borderBrush, Shape12)
             .clickable { onClick() }
             .padding(horizontal = 14.dp)
     ) {
@@ -382,7 +479,7 @@ fun ModernGlassButton(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (isActive) MaterialTheme.colorScheme.primary else iconTint,
+                tint = if (isActive) primary else iconTint,
                 modifier = Modifier.size(15.dp)
             )
             Spacer(Modifier.width(6.dp))
@@ -400,7 +497,7 @@ fun ModernGlassButton(
 }
 
 /**
- * Liquid Glass Circular / Squircle Icon Pill for Media Player & Toolbars
+ * Liquid Glass Circular / Squircle Icon Pill
  */
 @Composable
 fun ModernIconPill(
@@ -413,26 +510,21 @@ fun ModernIconPill(
     isCircle: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    val shape = if (isCircle) CircleShape else RoundedCornerShape(10.dp)
-    val bgBrush = if (isActive) {
-        Brush.verticalGradient(
-            listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
-        )
-    } else {
-        Brush.verticalGradient(
-            listOf(Color(0xCC22283A), Color(0xB8111520))
-        )
-    }
+    val shape = if (isCircle) CircleShape else Shape10
+    val primary = MaterialTheme.colorScheme.primary
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .size(size)
             .clip(shape)
-            .background(bgBrush)
+            .then(
+                if (isActive) Modifier.background(primary)
+                else Modifier.background(CachedIconPillFill)
+            )
             .border(
                 width = 1.dp,
-                color = if (isActive) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.18f),
+                color = if (isActive) primary else Color.White.copy(alpha = 0.22f),
                 shape = shape
             )
             .clickable { onClick() }
@@ -447,7 +539,7 @@ fun ModernIconPill(
 }
 
 /**
- * Low-profile Liquid Glass Filter Pill
+ * High-Contrast Liquid Glass Filter Pill
  */
 @Composable
 fun ModernFilterPill(
@@ -456,18 +548,18 @@ fun ModernFilterPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(10.dp)
-    val bg = if (selected) MaterialTheme.colorScheme.primary else Color(0xCC161B28)
-    val borderBrush = liquidGlassBorderBrush(if (selected) MaterialTheme.colorScheme.primary else null)
-    val textColor = if (selected) Color.White else NaphColors.TextSecondary
+    val primary = MaterialTheme.colorScheme.primary
+    val bg = if (selected) primary else Color(0xD91A2030)
+    val borderColor = if (selected) primary else Color.White.copy(alpha = 0.20f)
+    val textColor = if (selected) Color.White else Color(0xFFE2E8F0)
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .height(32.dp)
-            .clip(shape)
+            .clip(Shape10)
             .background(bg)
-            .border(1.dp, borderBrush, shape)
+            .border(1.dp, borderColor, Shape10)
             .clickable { onClick() }
             .padding(horizontal = 13.dp)
     ) {

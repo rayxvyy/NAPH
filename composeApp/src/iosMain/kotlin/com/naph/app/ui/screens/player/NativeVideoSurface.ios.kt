@@ -35,8 +35,13 @@ interface IosMpvSurfaceController {
     fun seekToMs(ms: Long)
     fun setPlaybackSpeed(speed: Float)
     fun setVolume(volume: Float)
+    fun setAspectMode(mode: String)
     fun addSubtitleTrack(url: String)
+    fun setSubtitlesEnabled(enabled: Boolean)
     fun setSubtitleDelayMs(delayMs: Long)
+    fun setSubtitleFontSize(sizeSp: Float)
+    fun cycleAudioTrack()
+    fun cycleEmbeddedSubtitleTrack()
     fun currentPositionMs(): Long
     fun currentDurationMs(): Long
     fun destroy()
@@ -60,8 +65,13 @@ actual fun NativeVideoSurface(
     seekToMs: Long?,
     playbackSpeed: Float,
     volume: Float,
+    aspectMode: String,
     subtitleUrl: String?,
+    subtitlesEnabled: Boolean,
     subtitleDelayMs: Long,
+    subtitleFontSizeSp: Float,
+    cycleAudioTick: Int,
+    cycleEmbeddedSubTick: Int,
     onPositionChanged: (positionMs: Long, durationMs: Long) -> Unit,
     modifier: Modifier
 ) {
@@ -112,18 +122,52 @@ actual fun NativeVideoSurface(
         }
     }
 
-    // Sync Volume
+    // Sync Volume (0..150% Boost on MPVKit)
     LaunchedEffect(volume) {
         if (mpvController != null) {
-            mpvController.setVolume(volume.coerceIn(0f, 1f))
+            mpvController.setVolume(volume.coerceIn(0f, 1.5f))
         } else {
             avPlayer?.volume = volume.coerceIn(0f, 1f)
+        }
+    }
+
+    // Sync Aspect Ratio / Zoom Mode
+    LaunchedEffect(aspectMode) {
+        if (mpvController != null) {
+            mpvController.setAspectMode(aspectMode)
+        } else {
+            avPlayerViewController?.videoGravity = when (aspectMode.lowercase()) {
+                "fill" -> AVLayerVideoGravityResizeAspectFill
+                "stretch" -> AVLayerVideoGravityResize
+                else -> AVLayerVideoGravityResizeAspect
+            }
+        }
+    }
+
+    // Sync Subtitle Visibility & Font Size
+    LaunchedEffect(subtitlesEnabled, subtitleFontSizeSp) {
+        mpvController?.setSubtitlesEnabled(subtitlesEnabled)
+        mpvController?.setSubtitleFontSize(subtitleFontSizeSp)
+    }
+
+    // Cycle Embedded Audio Track
+    LaunchedEffect(cycleAudioTick) {
+        if (cycleAudioTick > 0) {
+            mpvController?.cycleAudioTrack()
+        }
+    }
+
+    // Cycle Embedded Subtitle Track
+    LaunchedEffect(cycleEmbeddedSubTick) {
+        if (cycleEmbeddedSubTick > 0) {
+            mpvController?.cycleEmbeddedSubtitleTrack()
         }
     }
 
     // Load External Subtitle Track in MPVKit
     LaunchedEffect(subtitleUrl) {
         val sub = subtitleUrl?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        mpvController?.setSubtitlesEnabled(true)
         mpvController?.addSubtitleTrack(sub)
     }
 
@@ -188,6 +232,8 @@ actual fun NativeVideoSurface(
         )
     }
 }
+
+actual val isDesktopAwtHost: Boolean = false
 
 actual fun launchExternalPlayer(playerName: String, streamUrl: String, title: String): Boolean {
     val schemeUrl = when {

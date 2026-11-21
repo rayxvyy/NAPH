@@ -79,17 +79,6 @@ fun HomeScreen(
     val continueWatching = watchProgressMap[activeProfile.id].orEmpty()
     val profileWatchlist = watchlistMap[activeProfile.id].orEmpty()
 
-    var heroIndex by remember { mutableStateOf(0) }
-
-    LaunchedEffect(heroItems.size) {
-        if (heroItems.isNotEmpty()) {
-            while (true) {
-                delay(7500)
-                heroIndex = (heroIndex + 1) % heroItems.size
-            }
-        }
-    }
-
     if (installedAddons.isEmpty() && personalItems.isEmpty() && !isLoadingCatalogs) {
         Box(
             contentAlignment = Alignment.Center,
@@ -156,21 +145,11 @@ fun HomeScreen(
             .background(MaterialTheme.colorScheme.background)
     ) {
         if (layoutConfig.showHeroShowcase && heroItems.isNotEmpty()) {
-            val activeHero = heroItems[heroIndex % heroItems.size]
             item(key = "hero_showcase", contentType = "hero") {
-                HeroShowcaseStage(
-                    item = activeHero,
-                    totalSlides = heroItems.size,
-                    activeIndex = heroIndex % heroItems.size,
+                IsolatedHeroShowcaseCarousel(
+                    heroItems = heroItems,
                     layoutConfig = layoutConfig,
-                    isInWatchlist = appState.isInWatchlist(activeHero.id),
-                    onSelectSlide = { heroIndex = it },
-                    onPlayNow = { appState.openMediaDetail(activeHero) },
-                    onWatchTrailer = {
-                        appState.openMediaDetail(activeHero)
-                        appState.openInAppTrailer(activeHero.trailers.firstOrNull()?.source ?: "Way9Dexny3w")
-                    },
-                    onToggleWatchlist = { appState.toggleWatchlist(activeHero) }
+                    appState = appState
                 )
             }
         }
@@ -301,6 +280,40 @@ fun HomeScreen(
             }
         }
     }
+}
+
+@Composable
+private fun IsolatedHeroShowcaseCarousel(
+    heroItems: List<MediaItem>,
+    layoutConfig: LayoutCustomizationConfig,
+    appState: NaphAppState
+) {
+    var heroIndex by remember { mutableStateOf(0) }
+
+    LaunchedEffect(heroItems.size) {
+        if (heroItems.size > 1) {
+            while (true) {
+                delay(7500)
+                heroIndex = (heroIndex + 1) % heroItems.size
+            }
+        }
+    }
+
+    val activeHero = heroItems[heroIndex % heroItems.size]
+    HeroShowcaseStage(
+        item = activeHero,
+        totalSlides = heroItems.size,
+        activeIndex = heroIndex % heroItems.size,
+        layoutConfig = layoutConfig,
+        isInWatchlist = appState.isInWatchlist(activeHero.id),
+        onSelectSlide = { heroIndex = it },
+        onPlayNow = { appState.openMediaDetail(activeHero) },
+        onWatchTrailer = {
+            appState.openMediaDetail(activeHero)
+            appState.openInAppTrailer(activeHero.trailers.firstOrNull()?.source ?: "Way9Dexny3w")
+        },
+        onToggleWatchlist = { appState.toggleWatchlist(activeHero) }
+    )
 }
 
 @Composable

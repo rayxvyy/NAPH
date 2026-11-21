@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,9 +69,12 @@ fun CinemaPosterCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .clip(cornerShape)
+                .graphicsLayer {
+                    clip = true
+                    shape = cornerShape
+                }
                 .background(Color(0xFF12151E))
-                .border(0.75.dp, Color.White.copy(alpha = 0.08f), cornerShape)
+                .border(0.75.dp, Color.White.copy(alpha = 0.09f), cornerShape)
         ) {
             if (!item.poster.isNullOrBlank()) {
                 FastNetworkImage(

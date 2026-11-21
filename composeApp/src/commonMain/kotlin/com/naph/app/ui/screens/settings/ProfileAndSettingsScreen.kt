@@ -81,6 +81,7 @@ import com.naph.app.ui.components.ModernFilterPill
 import com.naph.app.ui.components.ModernGlassButton
 import com.naph.app.ui.components.ModernIconPill
 import com.naph.app.ui.components.ModernPrimaryButton
+import com.naph.app.ui.components.NaphSwitch
 import com.naph.app.ui.components.liquidGlassBorderBrush
 import com.naph.app.ui.components.liquidGlassFillBrush
 import com.naph.app.ui.state.NaphAppState
@@ -142,7 +143,7 @@ fun ProfileAndSettingsScreen(
         // Render Either Root Menu or Dedicated Sub-Page
         when (currentPage) {
             ProfileSettingsPage.ROOT -> ProfileRootSectionsList(appState)
-            ProfileSettingsPage.ACCOUNT_DETAIL -> AccountDetailSubPage(appState)
+            ProfileSettingsPage.MANAGE_PROFILES -> ManageProfilesSubPage(appState)
             ProfileSettingsPage.WATCH_PARTY -> WatchPartySubPage(appState)
             ProfileSettingsPage.TRACKING -> TrackingSubPage(appState)
             ProfileSettingsPage.APPEARANCE -> AppearanceSubPage(appState)
@@ -162,9 +163,6 @@ fun ProfileAndSettingsScreen(
 private fun ProfileRootSectionsList(appState: NaphAppState) {
     val activeProfile by appState.activeProfile.collectAsState()
     val profiles by appState.profiles.collectAsState()
-    val isSignedIn by appState.syncRepo.isSignedIn.collectAsState()
-    val accountEmail by appState.syncRepo.accountEmail.collectAsState()
-    val accountUsername by appState.syncRepo.accountUsername.collectAsState()
     val installedAddons by appState.installedAddons.collectAsState()
     val servers by appState.mediaServers.collectAsState()
     val selectedTheme by appState.selectedThemePreset.collectAsState()
@@ -181,7 +179,7 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
                 .statusBarsPadding()
                 .padding(start = hPad, end = hPad, top = 16.dp, bottom = 120.dp)
         ) {
-            // Active Profile Header Banner (Liquid Glass + Responsive Stack on iPhone!)
+            // Active Profile Header Banner (100% Local On-Device Profile)
             LiquidGlassCard(cornerRadius = 18.dp) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -207,10 +205,9 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                text = if (isSignedIn) "Cloud Sync Active • ${accountUsername ?: accountEmail.orEmpty()}"
-                                else "Local Profile • Create an account or sign in to sync",
+                                text = "Local Device Profile • ${profiles.size} profile${if (profiles.size == 1) "" else "s"} saved on device",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 17.sp),
-                                color = if (isSignedIn) NaphColors.EmeraldSeed else NaphColors.TextSecondary
+                                color = NaphColors.TextSecondary
                             )
                         }
                     }
@@ -226,32 +223,29 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
                             modifier = if (isCompact) Modifier.weight(1f) else Modifier
                         )
                         ModernGlassButton(
-                            text = "Delete Profile",
-                            icon = Icons.Default.Delete,
-                            iconTint = NaphColors.CrimsonPlay,
-                            textColor = NaphColors.CrimsonPlay,
-                            onClick = { appState.deleteProfile(activeProfile.id) },
+                            text = "Manage Profiles",
+                            icon = Icons.Default.Person,
+                            onClick = { appState.navigateSettingsPage(ProfileSettingsPage.MANAGE_PROFILES) },
                             modifier = if (isCompact) Modifier.weight(1f) else Modifier
                         )
                     }
                 }
             }
 
-            // SECTION 1: ACCOUNT
-            SettingsSectionCard(sectionTitle = "ACCOUNT & PROFILES") {
+            // SECTION 1: PROFILES & TRACKING (Pure Local — Zero Cloud Account Required)
+            SettingsSectionCard(sectionTitle = "PROFILES") {
                 SettingsRowItem(
                     icon = Icons.Default.People,
-                    title = "Manage & Delete Profiles",
-                    subtitle = "Active: ${activeProfile.name} ${activeProfile.avatarEmoji} (${profiles.size} total) • Switch, create, or delete profiles",
+                    title = "Switch Profile",
+                    subtitle = "Active: ${activeProfile.name} ${activeProfile.avatarEmoji} • Quick profile switcher",
                     onClick = { appState.toggleProfilePicker(true) }
                 )
                 SettingsDivider()
                 SettingsRowItem(
                     icon = Icons.Default.Person,
-                    title = "Create Account / Sign In (NAPH Cloud)",
-                    subtitle = if (isSignedIn) "Signed in as ${accountUsername ?: accountEmail ?: "User"} • Syncing across devices"
-                    else "Create your own account or sign in to sync addons & watch progress",
-                    onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ACCOUNT_DETAIL) }
+                    title = "Manage Profiles",
+                    subtitle = "View, add, rename, or delete local profiles on this device (${profiles.size} total)",
+                    onClick = { appState.navigateSettingsPage(ProfileSettingsPage.MANAGE_PROFILES) }
                 )
                 SettingsDivider()
                 SettingsRowItem(
@@ -332,191 +326,145 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
 // ============================================================================
 
 @Composable
-private fun AccountDetailSubPage(appState: NaphAppState) {
-    val isSignedIn by appState.syncRepo.isSignedIn.collectAsState()
-    val email by appState.syncRepo.accountEmail.collectAsState()
-    val username by appState.syncRepo.accountUsername.collectAsState()
-    val syncStatus by appState.syncRepo.cloudSyncStatus.collectAsState()
+private fun ManageProfilesSubPage(appState: NaphAppState) {
     val profiles by appState.profiles.collectAsState()
     val activeProfile by appState.activeProfile.collectAsState()
 
-    var authMode by remember { mutableStateOf("CREATE") } // "CREATE" or "SIGNIN"
-    var usernameInput by remember { mutableStateOf("") }
-    var emailInput by remember { mutableStateOf("") }
-    var passwordInput by remember { mutableStateOf("") }
     var newProfName by remember { mutableStateOf("") }
     var newProfEmoji by remember { mutableStateOf("🎬") }
+    var newProfKids by remember { mutableStateOf(false) }
+
+    var editingProfileId by remember { mutableStateOf<String?>(null) }
+    var editName by remember { mutableStateOf("") }
+    var editEmoji by remember { mutableStateOf("") }
 
     SubPageContainer {
-        // 1. CREATE ACCOUNT / SIGN IN SECTION (Starts clean with no pre-filled personal email!)
-        SettingsSectionCard(sectionTitle = "NAPH CLOUD ACCOUNT (CREATE ACCOUNT OR SIGN IN)") {
+        SettingsSectionCard(sectionTitle = "LOCAL PROFILES ON THIS DEVICE (${profiles.size})") {
             Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.padding(20.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(18.dp)
             ) {
-                Text(
-                    text = if (isSignedIn) "Signed In as ${username ?: email}" else "Sync Your NAPH Account Across Devices",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White
-                )
-                Text(
-                    text = syncStatus,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
-                    color = if (isSignedIn) NaphColors.EmeraldSeed else NaphColors.CyanGlow
-                )
+                profiles.forEach { prof ->
+                    val isCurrent = prof.id == activeProfile.id
+                    val isEditing = editingProfileId == prof.id
 
-                if (isSignedIn) {
-                    Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        ModernPrimaryButton(
-                            text = "Sync Now",
-                            icon = Icons.Default.Refresh,
-                            onClick = { appState.syncCloudNow() }
-                        )
-                        ModernGlassButton(
-                            text = "Sign Out",
-                            textColor = NaphColors.CrimsonPlay,
-                            onClick = {
-                                appState.syncRepo.signOutNaphAccount()
-                                appState.showBanner("Signed out of NAPH Cloud")
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF0E111A))
+                            .border(
+                                width = 1.dp,
+                                color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(14.dp)
+                    ) {
+                        if (isEditing) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = editName,
+                                    onValueChange = { editName = it },
+                                    label = { Text("Profile Name") },
+                                    singleLine = true,
+                                    colors = naphTextFieldColors(),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedTextField(
+                                    value = editEmoji,
+                                    onValueChange = { editEmoji = it },
+                                    label = { Text("Icon") },
+                                    singleLine = true,
+                                    colors = naphTextFieldColors(),
+                                    modifier = Modifier.width(76.dp)
+                                )
                             }
-                        )
-                    }
-                } else {
-                    // Mode Switcher: Create New Account vs Sign In
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ModernFilterPill(
-                            label = "Create Account",
-                            selected = authMode == "CREATE",
-                            onClick = { authMode = "CREATE" }
-                        )
-                        ModernFilterPill(
-                            label = "Sign In",
-                            selected = authMode == "SIGNIN",
-                            onClick = { authMode = "SIGNIN" }
-                        )
-                    }
-
-                    if (authMode == "CREATE") {
-                        OutlinedTextField(
-                            value = usernameInput,
-                            onValueChange = { usernameInput = it },
-                            label = { Text("Choose a Username") },
-                            placeholder = { Text("e.g. alex") },
-                            singleLine = true,
-                            colors = naphTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    OutlinedTextField(
-                        value = emailInput,
-                        onValueChange = { emailInput = it },
-                        label = { Text("Email Address") },
-                        placeholder = { Text("you@example.com") },
-                        singleLine = true,
-                        colors = naphTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = passwordInput,
-                        onValueChange = { passwordInput = it },
-                        label = { Text(if (authMode == "CREATE") "Create Password (min 6 chars)" else "Password") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        colors = naphTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (authMode == "CREATE") {
-                            ModernPrimaryButton(
-                                text = "Create Account & Enable Sync",
-                                icon = Icons.Default.Add,
-                                onClick = {
-                                    appState.createAccountAndSync(usernameInput, emailInput, passwordInput)
-                                }
-                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ModernPrimaryButton(
+                                    text = "Save",
+                                    icon = Icons.Default.Check,
+                                    height = 34.dp,
+                                    onClick = {
+                                        appState.renameProfile(prof.id, editName, editEmoji)
+                                        editingProfileId = null
+                                    }
+                                )
+                                ModernGlassButton(
+                                    text = "Cancel",
+                                    height = 34.dp,
+                                    onClick = { editingProfileId = null }
+                                )
+                            }
                         } else {
-                            ModernPrimaryButton(
-                                text = "Sign In & Sync Devices",
-                                icon = Icons.Default.Check,
-                                onClick = {
-                                    appState.signInAndSync(emailInput, passwordInput)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Text(prof.avatarEmoji, fontSize = 22.sp)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = prof.name + if (isCurrent) " (Active)" else "",
+                                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                                            color = Color.White
+                                        )
+                                        if (prof.isKidsProfile) {
+                                            Text(
+                                                text = "Kids Safe Mode",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                color = NaphColors.CyanGlow
+                                            )
+                                        }
+                                    }
                                 }
-                            )
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (!isCurrent) {
+                                    ModernPrimaryButton(
+                                        text = "Switch",
+                                        height = 32.dp,
+                                        onClick = { appState.switchProfile(prof) }
+                                    )
+                                }
+                                ModernGlassButton(
+                                    text = "Rename",
+                                    height = 32.dp,
+                                    onClick = {
+                                        editingProfileId = prof.id
+                                        editName = prof.name
+                                        editEmoji = prof.avatarEmoji
+                                    }
+                                )
+                                ModernGlassButton(
+                                    text = "Delete",
+                                    icon = Icons.Default.Delete,
+                                    iconTint = NaphColors.CrimsonPlay,
+                                    textColor = NaphColors.CrimsonPlay,
+                                    height = 32.dp,
+                                    onClick = { appState.deleteProfile(prof.id) }
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        // 2. MANAGE, CREATE & DELETE HOUSEHOLD PROFILES
-        SettingsSectionCard(sectionTitle = "PROFILES (SWITCH, CREATE, OR DELETE ANY PROFILE)") {
+        SettingsSectionCard(sectionTitle = "ADD NEW LOCAL PROFILE") {
             Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.padding(20.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(18.dp)
             ) {
-                profiles.forEach { prof ->
-                    val isCurrent = prof.id == activeProfile.id
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF0E1118))
-                            .border(
-                                width = 1.dp,
-                                color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(prof.avatarEmoji, fontSize = 20.sp)
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = prof.name + if (isCurrent) " (Active)" else "",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp),
-                                    color = Color.White
-                                )
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (!isCurrent) {
-                                ModernGlassButton(
-                                    text = "Switch",
-                                    height = 30.dp,
-                                    onClick = { appState.switchProfile(prof) }
-                                )
-                            }
-                            ModernGlassButton(
-                                text = "Delete",
-                                icon = Icons.Default.Delete,
-                                iconTint = NaphColors.CrimsonPlay,
-                                textColor = NaphColors.CrimsonPlay,
-                                height = 30.dp,
-                                onClick = { appState.deleteProfile(prof.id) }
-                            )
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 4.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = newProfName,
                         onValueChange = { newProfName = it },
-                        label = { Text("New Profile Name") },
+                        label = { Text("Profile Name") },
+                        placeholder = { Text("e.g. Living Room") },
                         singleLine = true,
                         colors = naphTextFieldColors(),
                         modifier = Modifier.weight(1f)
@@ -527,17 +475,26 @@ private fun AccountDetailSubPage(appState: NaphAppState) {
                         label = { Text("Emoji") },
                         singleLine = true,
                         colors = naphTextFieldColors(),
-                        modifier = Modifier.width(84.dp)
-                    )
-                    ModernPrimaryButton(
-                        text = "Add Profile",
-                        icon = Icons.Default.Add,
-                        onClick = {
-                            appState.addProfile(newProfName, newProfEmoji, false)
-                            newProfName = ""
-                        }
+                        modifier = Modifier.width(82.dp)
                     )
                 }
+
+                SettingsToggleRow(
+                    title = "Kids Safe Catalog Mode",
+                    subtitle = "Filter catalog recommendations for younger viewers",
+                    checked = newProfKids,
+                    onCheckedChange = { newProfKids = it }
+                )
+
+                ModernPrimaryButton(
+                    text = "Create Profile",
+                    icon = Icons.Default.Add,
+                    onClick = {
+                        appState.addProfile(newProfName, newProfEmoji, newProfKids)
+                        newProfName = ""
+                        newProfKids = false
+                    }
+                )
             }
         }
     }
@@ -1071,7 +1028,7 @@ private fun AddonsManagerSubPage(appState: NaphAppState) {
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Switch(
+                            NaphSwitch(
                                 checked = addon.isEnabled,
                                 onCheckedChange = { appState.toggleAddonEnabled(addon.id, it) }
                             )
@@ -1447,10 +1404,10 @@ private fun AboutSubPage() {
                     color = NaphColors.TextSecondary
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text("• Playback Engines: libmpv (Desktop/iOS MPVKit) + AndroidX Media3 ExoPlayer", style = MaterialTheme.typography.bodyMedium)
-                Text("• P2P Core: Sequential BitTorrent Piece Scheduler with Auto-Cleaning Temporary Ring Buffer", style = MaterialTheme.typography.bodyMedium)
+                Text("• Playback Engines: libmpv (Desktop & iOS MPVKit) + AndroidX Media3 ExoPlayer", style = MaterialTheme.typography.bodyMedium)
+                Text("• P2P Core: Sequential BitTorrent Streaming with Auto-Cleaning Temporary Cache", style = MaterialTheme.typography.bodyMedium)
                 Text("• Addon Protocol: Stremio v3 JSON Manifest Compatible", style = MaterialTheme.typography.bodyMedium)
-                Text("• Cloud Infrastructure: Built-in NAPH Cloud Cross-Platform Sync", style = MaterialTheme.typography.bodyMedium)
+                Text("• Privacy First: 100% Local On-Device Profiles & Storage", style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -1571,7 +1528,7 @@ private fun SettingsToggleRow(
             Spacer(Modifier.height(2.dp))
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = NaphColors.TextSecondary)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        NaphSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

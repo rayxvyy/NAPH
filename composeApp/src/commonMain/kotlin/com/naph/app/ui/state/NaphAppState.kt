@@ -18,13 +18,16 @@ import com.naph.app.core.model.TrackerSyncConfig
 import com.naph.app.core.model.UserProfile
 import com.naph.app.core.model.WatchPartySession
 import com.naph.app.core.model.WatchProgressEntry
+import com.naph.app.core.network.NaphNetwork
 import com.naph.app.data.addons.StremioAddonRepository
 import com.naph.app.data.debrid.DebridResolverRepository
 import com.naph.app.data.metadata.MetadataAndSkipRepository
 import com.naph.app.data.servers.PersonalMediaServerRepository
+import com.naph.app.data.storage.PlatformLocalStorage
 import com.naph.app.data.torrent.P2PTorrentStreamEngine
 import com.naph.app.data.trackers.CloudAndTrackerSyncRepository
 import com.naph.app.ui.theme.NaphThemePreset
+import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,8 +61,8 @@ enum class NaphTab(val label: String) {
 enum class ProfileSettingsPage(val title: String, val parent: ProfileSettingsPage? = null) {
     ROOT("Profile & Settings", null),
 
-    // Section 1: ACCOUNT
-    ACCOUNT_DETAIL("NAPH Cloud Account", ROOT),
+    // Section 1: PROFILES & TRACKING (100% Local On-Device Profiles — No Cloud Account Needed)
+    MANAGE_PROFILES("Manage Profiles", ROOT),
     WATCH_PARTY("Watch Party", ROOT),
     TRACKING("Tracking (Trakt.tv & SIMKL)", ROOT),
 
@@ -225,9 +228,48 @@ class NaphAppState {
     val statusBannerMessage: StateFlow<String?> = _statusBannerMessage.asStateFlow()
 
     init {
-        // Ensure any old default-seeded addons in cloud are cleared so the user starts clean
+        // Load locally saved profiles & installed addons from device storage (zero cloud dependency)
+        restoreLocalProfiles()
+        restoreLocalAddons()
+    }
+
+    private fun saveLocalProfiles() {
+        runCatching {
+            val encoded = NaphNetwork.json.encodeToString(_profiles.value)
+            PlatformLocalStorage.saveString("profiles", encoded)
+        }
+    }
+
+    private fun restoreLocalProfiles() {
+        val raw = PlatformLocalStorage.loadString("profiles") ?: return
+        runCatching {
+            val list = NaphNetwork.json.decodeFromString<List<UserProfile>>(raw)
+            if (list.isNotEmpty()) {
+                _profiles.value = list
+                _activeProfile.value = list.first()
+            }
+        }
+    }
+
+    private fun saveLocalAddonUrls() {
+        runCatching {
+            val urls = _installedAddons.value.map { it.manifestUrl }.filter { it.isNotBlank() }
+            PlatformLocalStorage.saveString("addon_urls", NaphNetwork.json.encodeToString(urls))
+        }
+    }
+
+    private fun restoreLocalAddons() {
+        val raw = PlatformLocalStorage.loadString("addon_urls") ?: return
+        val urls = runCatching { NaphNetwork.json.decodeFromString<List<String>>(raw) }.getOrDefault(emptyList())
+        if (urls.isEmpty()) return
         scope.launch {
-            syncRepo.clearDefaultSeededAddonsOnCloud()
+            val fetched = coroutineScope {
+                urls.map { url -> async { addonRepo.fetchManifest(url).getOrNull() } }.awaitAll().filterNotNull()
+            }
+            if (fetched.isNotEmpty()) {
+                _installedAddons.value = fetched.distinctBy { it.manifestUrl }
+                refreshLiveCatalogs()
+            }
         }
     }
 
@@ -339,9 +381,9 @@ class NaphAppState {
                 _installedAddons.value = _installedAddons.value.filterNot {
                     it.id == manifest.id || it.manifestUrl == manifest.manifestUrl
                 } + manifest
+                saveLocalAddonUrls()
                 _isInstallingAddon.value = false
                 showBanner("Installed '${manifest.name}' (${manifest.catalogs.size} catalogs)")
-                syncRepo.pushAddonToCloud(manifest)
                 refreshLiveCatalogs()
             }.onFailure { err ->
                 _isInstallingAddon.value = false
@@ -350,94 +392,17 @@ class NaphAppState {
         }
     }
 
-    fun createAccountAndSync(username: String, email: String, password: String) {
-        scope.launch {
-            val res = syncRepo.createNaphAccount(username, email, password)
-            res.onSuccess { user ->
-                // Push any existing local addons & profiles to this new cloud account
-                _installedAddons.value.forEach { syncRepo.pushAddonToCloud(it) }
-                _profiles.value.forEach { syncRepo.pushProfileToCloud(it) }
-                showBanner("Created account '$user' & synced ${_installedAddons.value.size} addons to cloud")
-            }.onFailure { err ->
-                showBanner(err.message ?: "Could not create account")
-            }
-        }
-    }
-
-    fun signInAndSync(email: String, password: String) {
-        scope.launch {
-            val res = syncRepo.signInWithNaphAccount(email, password)
-            res.onSuccess { user ->
-                showBanner("Signed in as $user • Syncing addons & profiles...")
-                syncCloudNow()
-            }.onFailure { err ->
-                showBanner(err.message ?: "Sign in failed")
-            }
-        }
-    }
-
-    fun syncCloudNow() {
-        scope.launch {
-            val email = syncRepo.accountEmail.value ?: return@launch
-            // 1. Pull addons from cloud for this account_email
-            val cloudAddons = syncRepo.pullAddonsFromCloud(email)
-            if (cloudAddons.isNotEmpty()) {
-                val fetched = coroutineScope {
-                    cloudAddons.map { rec ->
-                        async {
-                            addonRepo.fetchManifest(rec.manifestUrl).getOrNull()?.copy(isEnabled = rec.isEnabled)
-                        }
-                    }.awaitAll().filterNotNull()
-                }
-                if (fetched.isNotEmpty()) {
-                    val merged = (_installedAddons.value + fetched).distinctBy { it.manifestUrl }
-                    _installedAddons.value = merged
-                    refreshLiveCatalogs()
-                }
-            }
-
-            // 2. Push any local addons that aren't in the cloud yet
-            val cloudUrls = cloudAddons.map { it.manifestUrl }.toSet()
-            _installedAddons.value.filterNot { it.manifestUrl in cloudUrls }.forEach {
-                syncRepo.pushAddonToCloud(it)
-            }
-
-            // 3. Pull profiles from cloud
-            val cloudProfiles = syncRepo.pullProfilesFromCloud(email)
-            if (cloudProfiles.isNotEmpty()) {
-                _profiles.value = cloudProfiles
-                if (cloudProfiles.none { it.id == _activeProfile.value.id }) {
-                    _activeProfile.value = cloudProfiles.first()
-                }
-            } else {
-                _profiles.value.forEach { syncRepo.pushProfileToCloud(it) }
-            }
-
-            // 4. Pull watch progress from cloud
-            val cloudProgress = syncRepo.pullWatchProgressFromCloud(email)
-            if (cloudProgress.isNotEmpty()) {
-                _watchProgressByProfile.value = cloudProgress.groupBy { it.profileId }
-            }
-
-            showBanner("Cloud Sync Complete • ${_installedAddons.value.size} addons synced")
-        }
-    }
-
     fun toggleAddonEnabled(addonId: String, enabled: Boolean) {
-        val updatedList = _installedAddons.value.map {
+        _installedAddons.value = _installedAddons.value.map {
             if (it.id == addonId) it.copy(isEnabled = enabled) else it
         }
-        _installedAddons.value = updatedList
-        val target = updatedList.find { it.id == addonId }
-        if (target != null) {
-            scope.launch { syncRepo.pushAddonToCloud(target) }
-        }
+        saveLocalAddonUrls()
         refreshLiveCatalogs()
     }
 
     fun removeAddon(addonId: String) {
         _installedAddons.value = _installedAddons.value.filterNot { it.id == addonId }
-        scope.launch { syncRepo.removeAddonFromCloud(addonId) }
+        saveLocalAddonUrls()
         refreshLiveCatalogs()
         showBanner("Removed addon")
     }
@@ -465,7 +430,7 @@ class NaphAppState {
         _profiles.value = _profiles.value + newProf
         _activeProfile.value = newProf
         _showProfilePicker.value = false
-        scope.launch { syncRepo.pushProfileToCloud(newProf) }
+        saveLocalProfiles()
         showBanner("Created profile '${newProf.name}'")
     }
 
@@ -474,7 +439,6 @@ class NaphAppState {
         val remaining = _profiles.value.filterNot { it.id == profileId }
         _watchlistByProfile.value = _watchlistByProfile.value - profileId
         _watchProgressByProfile.value = _watchProgressByProfile.value - profileId
-        scope.launch { syncRepo.deleteProfileFromCloud(profileId) }
 
         if (remaining.isEmpty()) {
             val freshDefault = UserProfile(
@@ -485,12 +449,14 @@ class NaphAppState {
             )
             _profiles.value = listOf(freshDefault)
             _activeProfile.value = freshDefault
+            saveLocalProfiles()
             showBanner("Deleted '${target.name}' and reset to fresh profile")
         } else {
             _profiles.value = remaining
             if (_activeProfile.value.id == profileId) {
                 _activeProfile.value = remaining.first()
             }
+            saveLocalProfiles()
             showBanner("Deleted profile '${target.name}'")
         }
     }
@@ -508,6 +474,7 @@ class NaphAppState {
         if (_activeProfile.value.id == profileId) {
             _activeProfile.value = updatedList.first { it.id == profileId }
         }
+        saveLocalProfiles()
         showBanner("Updated profile '${newName.trim()}'")
     }
 
@@ -624,7 +591,6 @@ class NaphAppState {
             _watchProgressByProfile.value = _watchProgressByProfile.value + (prof.id to (listOf(entry) + currentList))
 
             scope.launch {
-                syncRepo.syncProfileProgressToSupabase(entry, prof, _installedAddons.value)
                 syncRepo.scrobblePlaybackEvent(
                     action = "stop",
                     imdbId = item.id,

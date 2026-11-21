@@ -27,8 +27,13 @@ actual fun NativeVideoSurface(
     seekToMs: Long?,
     playbackSpeed: Float,
     volume: Float,
+    aspectMode: String,
     subtitleUrl: String?,
+    subtitlesEnabled: Boolean,
     subtitleDelayMs: Long,
+    subtitleFontSizeSp: Float,
+    cycleAudioTick: Int,
+    cycleEmbeddedSubTick: Int,
     onPositionChanged: (positionMs: Long, durationMs: Long) -> Unit,
     modifier: Modifier
 ) {
@@ -85,6 +90,8 @@ actual fun NativeVideoSurface(
         modifier = modifier
     )
 }
+
+actual val isDesktopAwtHost: Boolean = false
 
 actual fun launchExternalPlayer(playerName: String, streamUrl: String, title: String): Boolean {
     return runCatching {

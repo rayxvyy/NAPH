@@ -109,8 +109,13 @@ actual fun NativeVideoSurface(
     seekToMs: Long?,
     playbackSpeed: Float,
     volume: Float,
+    aspectMode: String,
     subtitleUrl: String?,
+    subtitlesEnabled: Boolean,
     subtitleDelayMs: Long,
+    subtitleFontSizeSp: Float,
+    cycleAudioTick: Int,
+    cycleEmbeddedSubTick: Int,
     onPositionChanged: (positionMs: Long, durationMs: Long) -> Unit,
     modifier: Modifier
 ) {
@@ -183,6 +188,8 @@ actual fun NativeVideoSurface(
                 mpv.mpv_set_option_string(ctx, "demuxer-max-bytes", "400M")
                 mpv.mpv_set_option_string(ctx, "demuxer-readahead-secs", "60")
                 mpv.mpv_set_option_string(ctx, "video-sync", "display-resample")
+                mpv.mpv_set_option_string(ctx, "volume-max", "200")
+                mpv.mpv_set_option_string(ctx, "sub-auto", "fuzzy")
 
                 if (mpv.mpv_initialize(ctx) >= 0) {
                     initializedCtx = ctx
@@ -239,12 +246,74 @@ actual fun NativeVideoSurface(
         }
     }
 
-    // Sync Volume (0..100)
+    // Sync Volume (0..150% with Boost)
     LaunchedEffect(volume, mpvHandle) {
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            mpv.mpv_set_property_string(ctx, "volume", (volume * 100f).toInt().coerceIn(0, 100).toString())
+            mpv.mpv_set_property_string(ctx, "volume", (volume * 100f).toInt().coerceIn(0, 150).toString())
+        }
+    }
+
+    // Sync Aspect Ratio / Zoom Mode (fit, fill, 16:9, stretch)
+    LaunchedEffect(aspectMode, mpvHandle) {
+        val ctx = mpvHandle ?: return@LaunchedEffect
+        val mpv = LibMpvJna.instance ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            when (aspectMode.lowercase()) {
+                "fill" -> {
+                    mpv.mpv_set_property_string(ctx, "keepaspect", "yes")
+                    mpv.mpv_set_property_string(ctx, "video-aspect-override", "-1")
+                    mpv.mpv_set_property_string(ctx, "panscan", "1.0")
+                }
+                "16:9" -> {
+                    mpv.mpv_set_property_string(ctx, "keepaspect", "yes")
+                    mpv.mpv_set_property_string(ctx, "panscan", "0.0")
+                    mpv.mpv_set_property_string(ctx, "video-aspect-override", "16:9")
+                }
+                "stretch" -> {
+                    mpv.mpv_set_property_string(ctx, "keepaspect", "no")
+                    mpv.mpv_set_property_string(ctx, "panscan", "0.0")
+                    mpv.mpv_set_property_string(ctx, "video-aspect-override", "-1")
+                }
+                else -> { // fit
+                    mpv.mpv_set_property_string(ctx, "keepaspect", "yes")
+                    mpv.mpv_set_property_string(ctx, "panscan", "0.0")
+                    mpv.mpv_set_property_string(ctx, "video-aspect-override", "-1")
+                }
+            }
+        }
+    }
+
+    // Sync Subtitle Visibility & Font Size
+    LaunchedEffect(subtitlesEnabled, subtitleFontSizeSp, mpvHandle) {
+        val ctx = mpvHandle ?: return@LaunchedEffect
+        val mpv = LibMpvJna.instance ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            mpv.mpv_set_property_string(ctx, "sub-visibility", if (subtitlesEnabled) "yes" else "no")
+            val mpvFontSize = (subtitleFontSizeSp * 2.2f).toInt().coerceIn(24, 90)
+            mpv.mpv_set_property_string(ctx, "sub-font-size", mpvFontSize.toString())
+        }
+    }
+
+    // Cycle Embedded Audio Tracks
+    LaunchedEffect(cycleAudioTick) {
+        if (cycleAudioTick <= 0) return@LaunchedEffect
+        val ctx = mpvHandle ?: return@LaunchedEffect
+        val mpv = LibMpvJna.instance ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            mpv.mpv_command(ctx, arrayOf("cycle", "audio", null))
+        }
+    }
+
+    // Cycle Embedded Subtitle Tracks
+    LaunchedEffect(cycleEmbeddedSubTick) {
+        if (cycleEmbeddedSubTick <= 0) return@LaunchedEffect
+        val ctx = mpvHandle ?: return@LaunchedEffect
+        val mpv = LibMpvJna.instance ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            mpv.mpv_set_property_string(ctx, "sub-visibility", "yes")
+            mpv.mpv_command(ctx, arrayOf("cycle", "sub", null))
         }
     }
 
@@ -254,6 +323,7 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
+            mpv.mpv_set_property_string(ctx, "sub-visibility", "yes")
             mpv.mpv_command(ctx, arrayOf("sub-add", sub, "select", null))
         }
     }
@@ -307,6 +377,8 @@ actual fun NativeVideoSurface(
         )
     }
 }
+
+actual val isDesktopAwtHost: Boolean = true
 
 actual fun launchExternalPlayer(playerName: String, streamUrl: String, title: String): Boolean {
     return runCatching {

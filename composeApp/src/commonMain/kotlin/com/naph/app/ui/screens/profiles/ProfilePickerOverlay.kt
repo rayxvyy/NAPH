@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.naph.app.ui.components.ModernGlassButton
 import com.naph.app.ui.components.ModernIconPill
 import com.naph.app.ui.components.ModernPrimaryButton
+import com.naph.app.ui.components.NaphSwitch
 import com.naph.app.ui.state.NaphAppState
 import com.naph.app.ui.theme.NaphColors
 import com.naph.app.ui.theme.naphTextFieldColors
@@ -248,7 +249,7 @@ fun ProfilePickerOverlay(
                     ) {
                         Text("Kids Safe Catalog Mode", style = MaterialTheme.typography.bodyMedium, color = Color.White)
                         Spacer(Modifier.width(12.dp))
-                        Switch(checked = isKids, onCheckedChange = { isKids = it })
+                        NaphSwitch(checked = isKids, onCheckedChange = { isKids = it })
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         ModernPrimaryButton(

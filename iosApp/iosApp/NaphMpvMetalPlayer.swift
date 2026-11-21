@@ -16,6 +16,7 @@ final class NaphMetalVideoView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .black
+        isUserInteractionEnabled = false
         metalLayer.contentsScale = UIScreen.main.scale
         metalLayer.framebufferOnly = true
         metalLayer.pixelFormat = .bgra8Unorm
@@ -78,6 +79,7 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
             mpv_set_option_string(ctx, "demuxer-max-bytes", "200M")
             mpv_set_option_string(ctx, "demuxer-readahead-secs", "45")
             mpv_set_option_string(ctx, "force-seekable", "yes")
+            mpv_set_option_string(ctx, "volume-max", "200")
 
             if mpv_initialize(ctx) < 0 {
                 // Fallback to classic gpu vo if gpu-next fails on older GPUs
@@ -160,13 +162,48 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
     func setVolume(volume: Float) {
         queue.async { [weak self] in
             guard let ctx = self?.mpv else { return }
-            let pct = Int(max(0, min(100, volume * 100.0)))
+            let pct = Int(max(0, min(150, volume * 100.0)))
             mpv_set_property_string(ctx, "volume", "\(pct)")
         }
     }
 
+    func setAspectMode(mode: String) {
+        queue.async { [weak self] in
+            guard let ctx = self?.mpv else { return }
+            switch mode.lowercased() {
+            case "fill":
+                mpv_set_property_string(ctx, "keepaspect", "yes")
+                mpv_set_property_string(ctx, "video-aspect-override", "-1")
+                mpv_set_property_string(ctx, "panscan", "1.0")
+            case "16:9":
+                mpv_set_property_string(ctx, "keepaspect", "yes")
+                mpv_set_property_string(ctx, "panscan", "0.0")
+                mpv_set_property_string(ctx, "video-aspect-override", "16:9")
+            case "stretch":
+                mpv_set_property_string(ctx, "keepaspect", "no")
+                mpv_set_property_string(ctx, "panscan", "0.0")
+                mpv_set_property_string(ctx, "video-aspect-override", "-1")
+            default:
+                mpv_set_property_string(ctx, "keepaspect", "yes")
+                mpv_set_property_string(ctx, "panscan", "0.0")
+                mpv_set_property_string(ctx, "video-aspect-override", "-1")
+            }
+        }
+    }
+
     func addSubtitleTrack(url: String) {
+        queue.async { [weak self] in
+            guard let ctx = self?.mpv else { return }
+            mpv_set_property_string(ctx, "sub-visibility", "yes")
+        }
         sendCommand(["sub-add", url, "select"])
+    }
+
+    func setSubtitlesEnabled(enabled: Bool) {
+        queue.async { [weak self] in
+            guard let ctx = self?.mpv else { return }
+            mpv_set_property_string(ctx, "sub-visibility", enabled ? "yes" : "no")
+        }
     }
 
     func setSubtitleDelayMs(delayMs: Int64) {
@@ -175,6 +212,26 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
             let sec = Double(delayMs) / 1000.0
             mpv_set_property_string(ctx, "sub-delay", String(format: "%.3f", sec))
         }
+    }
+
+    func setSubtitleFontSize(sizeSp: Float) {
+        queue.async { [weak self] in
+            guard let ctx = self?.mpv else { return }
+            let mpvSize = Int(max(24, min(90, sizeSp * 2.2)))
+            mpv_set_property_string(ctx, "sub-font-size", "\(mpvSize)")
+        }
+    }
+
+    func cycleAudioTrack() {
+        sendCommand(["cycle", "audio"])
+    }
+
+    func cycleEmbeddedSubtitleTrack() {
+        queue.async { [weak self] in
+            guard let ctx = self?.mpv else { return }
+            mpv_set_property_string(ctx, "sub-visibility", "yes")
+        }
+        sendCommand(["cycle", "sub"])
     }
 
     func currentPositionMs() -> Int64 {
