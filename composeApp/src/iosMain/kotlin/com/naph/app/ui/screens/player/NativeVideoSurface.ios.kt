@@ -232,12 +232,17 @@ actual fun NativeVideoSurface(
                 view.setNeedsLayout()
                 view.layoutIfNeeded()
             },
+            interactive = false,
             modifier = Modifier.fillMaxSize()
         )
     }
 }
 
 actual val isDesktopAwtHost: Boolean = false
+
+actual fun toggleNativeFullscreen() = Unit
+
+actual fun exitNativeFullscreen() = Unit
 
 actual fun launchExternalPlayer(playerName: String, streamUrl: String, title: String): Boolean {
     val schemeUrl = when {

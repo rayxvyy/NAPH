@@ -3,7 +3,8 @@ import UIKit
 import QuartzCore
 import ComposeApp
 
-/// Metal-backed UIView required by Nuvio's MPVKit (`gpu-next` + `MoltenVK` + `VideoToolbox`)
+/// Metal-backed UIView for MPVKit (`gpu` + `MoltenVK` + `VideoToolbox` hardware acceleration)
+/// Properly synchronizes `contentsScale` & `drawableSize` across portrait <-> landscape rotations.
 final class NaphMetalVideoView: UIView {
     override class var layerClass: AnyClass {
         return CAMetalLayer.self
@@ -13,15 +14,20 @@ final class NaphMetalVideoView: UIView {
         return self.layer as! CAMetalLayer
     }
 
+    var onBoundsResized: ((CGSize) -> Void)?
+    private var lastSyncedPixelSize: CGSize = .zero
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .black
         isUserInteractionEnabled = false
         clipsToBounds = true
         autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        metalLayer.contentsScale = UIScreen.main.scale
+        let scale = UIScreen.main.nativeScale
+        metalLayer.contentsScale = scale
         metalLayer.framebufferOnly = true
         metalLayer.pixelFormat = .bgra8Unorm
+        metalLayer.isOpaque = true
     }
 
     required init?(coder: NSCoder) {
@@ -29,16 +35,24 @@ final class NaphMetalVideoView: UIView {
     }
 
     func syncDrawableSize() {
-        let scale = window?.screen.scale ?? UIScreen.main.scale
-        let w = max(1, bounds.width * scale)
-        let h = max(1, bounds.height * scale)
+        guard bounds.width > 1, bounds.height > 1 else { return }
+        let scale = window?.screen.nativeScale ?? UIScreen.main.nativeScale
+        let pixelSize = CGSize(
+            width: floor(bounds.width * scale),
+            height: floor(bounds.height * scale)
+        )
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         metalLayer.contentsScale = scale
-        if metalLayer.drawableSize.width != w || metalLayer.drawableSize.height != h {
-            metalLayer.drawableSize = CGSize(width: w, height: h)
+        if metalLayer.drawableSize != pixelSize {
+            metalLayer.drawableSize = pixelSize
         }
         CATransaction.commit()
+
+        if lastSyncedPixelSize != pixelSize {
+            lastSyncedPixelSize = pixelSize
+            onBoundsResized?(pixelSize)
+        }
     }
 
     override func layoutSubviews() {
@@ -52,7 +66,7 @@ final class NaphMetalVideoView: UIView {
     }
 }
 
-/// Clipping container view so portrait <-> landscape rotation ALWAYS pins the Metal surface to exact bounds
+/// Clipping container view so portrait <-> landscape rotation pins the Metal layer to exact bounds
 final class NaphVideoContainerView: UIView {
     let metalView = NaphMetalVideoView(frame: .zero)
 
@@ -80,8 +94,9 @@ final class NaphVideoContainerView: UIView {
     }
 }
 
-/// Real Nuvio MPVKit (`libmpv` + `MoltenVK` + `VideoToolbox` + `libass` + `libdovi`) iOS Player Controller
-/// Plays MKV, HEVC, Dolby Vision, HDR10, AV1, TrueHD, EAC3, DTS, ASS/SSA subtitles, and local P2P streams natively on iPhone!
+/// Real Hardware-Accelerated iOS MPVKit Controller (`vo=gpu` + `MoltenVK` + `VideoToolbox` + `libass` + `libdovi`):
+/// - Uses `vo=gpu` + `moltenvk` so portrait <-> landscape rotation dynamically rebuilds the swapchain centered (zero bottom-left crop!)
+/// - Uses `hwdec=videotoolbox` + `hwdec-codecs=all` for full Apple Silicon hardware decoding & crisp scaling
 final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
     private let containerView = NaphVideoContainerView(frame: UIScreen.main.bounds)
     private var metalView: NaphMetalVideoView { containerView.metalView }
@@ -90,6 +105,7 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
     private var isInitialized = false
     private var pendingStreamUrl: String?
     private var pendingPlaying: Bool = true
+    private var currentAspectOverride: String = "-1"
 
     var view: UIView {
         return containerView
@@ -97,23 +113,41 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
 
     override init() {
         super.init()
+        metalView.onBoundsResized = { [weak self] _ in
+            self?.nudgeViewportResize()
+        }
         setupMpv()
+    }
+
+    private func nudgeViewportResize() {
+        queue.async { [weak self] in
+            guard let self = self, let ctx = self.mpv else { return }
+            // Nudge libmpv VO to re-query CAMetalLayer drawableSize immediately on portrait/landscape rotation
+            mpv_set_property_string(ctx, "video-aspect-override", self.currentAspectOverride)
+            mpv_set_property_string(ctx, "video-align-x", "0")
+            mpv_set_property_string(ctx, "video-align-y", "0")
+        }
     }
 
     private func setupMpv() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.metalView.syncDrawableSize()
             guard let ctx = mpv_create() else { return }
 
             var layerPtr = Unmanaged.passUnretained(self.metalView.metalLayer).toOpaque()
             mpv_set_option(ctx, "wid", MPV_FORMAT_INT64, &layerPtr)
 
-            // NuvioMedia/MPVKit iOS Metal / MoltenVK + VideoToolbox hardware decoding configuration
-            mpv_set_option_string(ctx, "vo", "gpu-next")
+            // Use classic `vo=gpu` + `moltenvk` + `videotoolbox` for rock-solid portrait/landscape rotation & Apple hardware decode
+            mpv_set_option_string(ctx, "vo", "gpu")
             mpv_set_option_string(ctx, "gpu-api", "vulkan")
             mpv_set_option_string(ctx, "gpu-context", "moltenvk")
             mpv_set_option_string(ctx, "hwdec", "videotoolbox")
+            mpv_set_option_string(ctx, "hwdec-codecs", "all")
             mpv_set_option_string(ctx, "vd-lavc-software-fallback", "yes")
+            mpv_set_option_string(ctx, "video-sync", "audio")
+            mpv_set_option_string(ctx, "scale", "spline36")
+            mpv_set_option_string(ctx, "cscale", "spline36")
             mpv_set_option_string(ctx, "keep-open", "yes")
             mpv_set_option_string(ctx, "idle", "yes")
             mpv_set_option_string(ctx, "osc", "no")
@@ -125,30 +159,15 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
             mpv_set_option_string(ctx, "demuxer-readahead-secs", "45")
             mpv_set_option_string(ctx, "force-seekable", "yes")
             mpv_set_option_string(ctx, "volume-max", "200")
+            mpv_set_option_string(ctx, "video-align-x", "0")
+            mpv_set_option_string(ctx, "video-align-y", "0")
 
-            if mpv_initialize(ctx) < 0 {
-                // Fallback to classic gpu vo if gpu-next fails on older GPUs
-                mpv_terminate_destroy(ctx)
-                guard let fallbackCtx = mpv_create() else { return }
-                var fbLayerPtr = Unmanaged.passUnretained(self.metalView.metalLayer).toOpaque()
-                mpv_set_option(fallbackCtx, "wid", MPV_FORMAT_INT64, &fbLayerPtr)
-                mpv_set_option_string(fallbackCtx, "vo", "gpu")
-                mpv_set_option_string(fallbackCtx, "gpu-api", "vulkan")
-                mpv_set_option_string(fallbackCtx, "gpu-context", "moltenvk")
-                mpv_set_option_string(fallbackCtx, "hwdec", "videotoolbox")
-                mpv_set_option_string(fallbackCtx, "keep-open", "yes")
-                mpv_set_option_string(fallbackCtx, "idle", "yes")
-                mpv_set_option_string(fallbackCtx, "cache", "yes")
-                if mpv_initialize(fallbackCtx) >= 0 {
-                    self.mpv = fallbackCtx
-                    self.isInitialized = true
-                } else {
-                    mpv_terminate_destroy(fallbackCtx)
-                    return
-                }
-            } else {
+            if mpv_initialize(ctx) >= 0 {
                 self.mpv = ctx
                 self.isInitialized = true
+            } else {
+                mpv_terminate_destroy(ctx)
+                return
             }
 
             if let url = self.pendingStreamUrl {
@@ -214,21 +233,25 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
 
     func setAspectMode(mode: String) {
         queue.async { [weak self] in
-            guard let ctx = self?.mpv else { return }
+            guard let self = self, let ctx = self.mpv else { return }
             switch mode.lowercased() {
             case "fill":
+                self.currentAspectOverride = "-1"
                 mpv_set_property_string(ctx, "keepaspect", "yes")
                 mpv_set_property_string(ctx, "video-aspect-override", "-1")
                 mpv_set_property_string(ctx, "panscan", "1.0")
             case "16:9":
+                self.currentAspectOverride = "16:9"
                 mpv_set_property_string(ctx, "keepaspect", "yes")
                 mpv_set_property_string(ctx, "panscan", "0.0")
                 mpv_set_property_string(ctx, "video-aspect-override", "16:9")
             case "stretch":
+                self.currentAspectOverride = "-1"
                 mpv_set_property_string(ctx, "keepaspect", "no")
                 mpv_set_property_string(ctx, "panscan", "0.0")
                 mpv_set_property_string(ctx, "video-aspect-override", "-1")
             default:
+                self.currentAspectOverride = "-1"
                 mpv_set_property_string(ctx, "keepaspect", "yes")
                 mpv_set_property_string(ctx, "panscan", "0.0")
                 mpv_set_property_string(ctx, "video-aspect-override", "-1")

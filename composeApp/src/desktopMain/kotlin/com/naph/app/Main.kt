@@ -7,9 +7,11 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.naph.app.ui.screens.player.DesktopWindowController
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Dimension
@@ -26,6 +28,18 @@ fun main() = application {
         size = DpSize(1380.dp, 860.dp),
         position = WindowPosition.Aligned(Alignment.Center)
     )
+    DesktopWindowController.onToggleFullscreen = {
+        windowState.placement = if (windowState.placement == WindowPlacement.Fullscreen) {
+            WindowPlacement.Floating
+        } else {
+            WindowPlacement.Fullscreen
+        }
+    }
+    DesktopWindowController.onExitFullscreen = {
+        if (windowState.placement == WindowPlacement.Fullscreen) {
+            windowState.placement = WindowPlacement.Floating
+        }
+    }
     val appIcon = remember { BitmapPainter(createNaphAppIconBitmap().toComposeImageBitmap()) }
 
     Window(

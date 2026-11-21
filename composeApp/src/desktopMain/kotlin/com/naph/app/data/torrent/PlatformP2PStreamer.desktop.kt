@@ -182,6 +182,8 @@ actual object PlatformP2PStreamer {
                     )
                     delay(400)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 onStreamError("P2P Engine Error: ${e.message ?: "Failed to connect to BitTorrent swarm"}")
             }

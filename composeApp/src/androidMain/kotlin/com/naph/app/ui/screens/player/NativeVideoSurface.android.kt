@@ -93,6 +93,10 @@ actual fun NativeVideoSurface(
 
 actual val isDesktopAwtHost: Boolean = false
 
+actual fun toggleNativeFullscreen() = Unit
+
+actual fun exitNativeFullscreen() = Unit
+
 actual fun launchExternalPlayer(playerName: String, streamUrl: String, title: String): Boolean {
     return runCatching {
         val intent = Intent(Intent.ACTION_VIEW).apply {

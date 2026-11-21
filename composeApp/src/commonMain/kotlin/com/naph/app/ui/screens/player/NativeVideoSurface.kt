@@ -36,6 +36,16 @@ expect fun NativeVideoSurface(
 expect val isDesktopAwtHost: Boolean
 
 /**
+ * Toggles real OS window fullscreen on Desktop (Linux/Windows). No-op on mobile where playback is already fullscreen.
+ */
+expect fun toggleNativeFullscreen()
+
+/**
+ * Exits OS window fullscreen on Desktop when leaving the player.
+ */
+expect fun exitNativeFullscreen()
+
+/**
  * Launches an external desktop/mobile media player (VLC, MPV, IINA, Infuse, Outplayer)
  */
 expect fun launchExternalPlayer(playerName: String, streamUrl: String, title: String): Boolean

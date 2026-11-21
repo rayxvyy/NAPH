@@ -29,6 +29,14 @@ import java.lang.reflect.Field
 import java.lang.reflect.Method
 
 /**
+ * Window fullscreen controller wired from `Main.kt`.
+ */
+object DesktopWindowController {
+    var onToggleFullscreen: (() -> Unit)? = null
+    var onExitFullscreen: (() -> Unit)? = null
+}
+
+/**
  * Direct JNA binding to system `libmpv` (`libmpv.so.2` on Linux, `libmpv-2.dll` on Windows, `libmpv.2.dylib` on macOS)
  */
 internal interface LibMpvJna : Library {
@@ -68,6 +76,89 @@ internal interface LibC : Library {
 }
 
 /**
+ * Process-wide synchronized guard so ONLY ONE `libmpv` instance can ever exist at a time.
+ * Completely prevents leaked background instances and double-audio playback!
+ */
+internal object ActiveDesktopMpvManager {
+    private var activeHandle: Pointer? = null
+    private var activeWid: Long = 0L
+
+    @Synchronized
+    fun destroyCurrent() {
+        val old = activeHandle
+        activeHandle = null
+        activeWid = 0L
+        if (old != null) {
+            runCatching { LibMpvJna.instance?.mpv_terminate_destroy(old) }
+        }
+    }
+
+    @Synchronized
+    fun getOrCreateForWid(wid: Long): Pointer? {
+        val mpv = LibMpvJna.instance ?: return null
+        LibC.instance?.setlocale(LibC.LC_NUMERIC, "C")
+
+        // Reuse existing live handle if same AWT Canvas wid (zero duplicate audio!)
+        if (activeHandle != null && activeWid == wid) {
+            return activeHandle
+        }
+
+        // Synchronously terminate any prior handle before creating a new one
+        destroyCurrent()
+
+        val os = System.getProperty("os.name").orEmpty().lowercase()
+        val contexts = if (os.contains("win")) {
+            listOf("d3d11", "winvk", "auto")
+        } else {
+            listOf("x11egl", "x11vk", "auto")
+        }
+
+        for (gpuCtx in contexts) {
+            val ctx = mpv.mpv_create() ?: continue
+            mpv.mpv_set_option_string(ctx, "wid", wid.toString())
+            mpv.mpv_set_option_string(ctx, "osc", "no")
+            mpv.mpv_set_option_string(ctx, "osd-level", "0")
+            mpv.mpv_set_option_string(ctx, "input-default-bindings", "no")
+            mpv.mpv_set_option_string(ctx, "input-vo-keyboard", "no")
+            mpv.mpv_set_option_string(ctx, "keep-open", "yes")
+            mpv.mpv_set_option_string(ctx, "idle", "yes")
+            mpv.mpv_set_option_string(ctx, "vo", "gpu")
+            mpv.mpv_set_option_string(ctx, "force-window", "immediate")
+            if (gpuCtx != "auto") {
+                mpv.mpv_set_option_string(ctx, "gpu-context", gpuCtx)
+            }
+            // Full GPU hardware decoding (VAAPI / NVDEC on Linux, D3D11VA / DXVA2 on Windows)
+            mpv.mpv_set_option_string(ctx, "hwdec", "auto")
+            mpv.mpv_set_option_string(ctx, "hwdec-codecs", "all")
+            mpv.mpv_set_option_string(ctx, "vd-lavc-software-fallback", "yes")
+            // Crisp scaling & smooth audio-synced playback (no X11 wid display-resample stutter)
+            mpv.mpv_set_option_string(ctx, "video-sync", "audio")
+            mpv.mpv_set_option_string(ctx, "scale", "spline36")
+            mpv.mpv_set_option_string(ctx, "cscale", "spline36")
+            mpv.mpv_set_option_string(ctx, "dscale", "mitchell")
+            mpv.mpv_set_option_string(ctx, "force-seekable", "yes")
+            mpv.mpv_set_option_string(ctx, "cache", "yes")
+            mpv.mpv_set_option_string(ctx, "demuxer-max-bytes", "400M")
+            mpv.mpv_set_option_string(ctx, "demuxer-readahead-secs", "60")
+            mpv.mpv_set_option_string(ctx, "volume-max", "200")
+            mpv.mpv_set_option_string(ctx, "sub-auto", "fuzzy")
+
+            if (mpv.mpv_initialize(ctx) >= 0) {
+                activeHandle = ctx
+                activeWid = wid
+                return ctx
+            } else {
+                mpv.mpv_terminate_destroy(ctx)
+            }
+        }
+        return null
+    }
+
+    @Synchronized
+    fun currentHandle(): Pointer? = activeHandle
+}
+
+/**
  * Resolves the native X11 `wid` (Linux) or `HWND` (Windows) from an AWT Heavyweight Canvas
  * so `libmpv` renders video frames directly inside the Compose window!
  */
@@ -100,7 +191,7 @@ internal object DesktopNativeViewResolver {
 }
 
 /**
- * Windows & Linux Desktop Native Video Surface powered by real in-window `libmpv` embedding!
+ * Windows & Linux Desktop Native Video Surface powered by real hardware-accelerated `libmpv` embedding!
  */
 @Composable
 actual fun NativeVideoSurface(
@@ -121,6 +212,7 @@ actual fun NativeVideoSurface(
 ) {
     var mpvHandle by remember { mutableStateOf<Pointer?>(null) }
     var canvasReadyWid by remember { mutableStateOf(0L) }
+    var loadedStreamUrl by remember { mutableStateOf("") }
 
     val hostCanvas = remember {
         object : Canvas() {
@@ -131,12 +223,12 @@ actual fun NativeVideoSurface(
                 addComponentListener(object : ComponentAdapter() {
                     override fun componentResized(e: ComponentEvent?) {
                         val wid = DesktopNativeViewResolver.resolveWindowId(self)
-                        if (wid != 0L) canvasReadyWid = wid
+                        if (wid != 0L && wid != canvasReadyWid) canvasReadyWid = wid
                     }
 
                     override fun componentShown(e: ComponentEvent?) {
                         val wid = DesktopNativeViewResolver.resolveWindowId(self)
-                        if (wid != 0L) canvasReadyWid = wid
+                        if (wid != 0L && wid != canvasReadyWid) canvasReadyWid = wid
                     }
                 })
             }
@@ -144,65 +236,22 @@ actual fun NativeVideoSurface(
             override fun addNotify() {
                 super.addNotify()
                 val wid = DesktopNativeViewResolver.resolveWindowId(this)
-                if (wid != 0L) canvasReadyWid = wid
+                if (wid != 0L && wid != canvasReadyWid) canvasReadyWid = wid
             }
         }
     }
 
-    // Initialize libmpv and attach to the AWT Canvas X11 wid / Windows HWND
+    // Initialize single libmpv handle & load stream cleanly (prevents double-audio!)
     LaunchedEffect(canvasReadyWid, streamUrl) {
         if (canvasReadyWid == 0L || streamUrl.isBlank()) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             val mpv = LibMpvJna.instance ?: return@withContext
-            LibC.instance?.setlocale(LibC.LC_NUMERIC, "C")
-
-            // Clean up any previous handle before opening new stream
-            mpvHandle?.let { old ->
-                runCatching { mpv.mpv_terminate_destroy(old) }
-                mpvHandle = null
-            }
-
-            // Try x11egl first, fallback to x11vk / auto
-            val contexts = listOf("x11egl", "x11vk", "auto")
-            var initializedCtx: Pointer? = null
-
-            for (gpuCtx in contexts) {
-                val ctx = mpv.mpv_create() ?: continue
-                mpv.mpv_set_option_string(ctx, "wid", canvasReadyWid.toString())
-                mpv.mpv_set_option_string(ctx, "osc", "no")
-                mpv.mpv_set_option_string(ctx, "osd-level", "0")
-                mpv.mpv_set_option_string(ctx, "input-default-bindings", "no")
-                mpv.mpv_set_option_string(ctx, "input-vo-keyboard", "no")
-                mpv.mpv_set_option_string(ctx, "keep-open", "yes")
-                mpv.mpv_set_option_string(ctx, "idle", "yes")
-                mpv.mpv_set_option_string(ctx, "vo", "gpu")
-                mpv.mpv_set_option_string(ctx, "force-window", "immediate")
-                if (gpuCtx != "auto") {
-                    mpv.mpv_set_option_string(ctx, "gpu-context", gpuCtx)
-                }
-                mpv.mpv_set_option_string(ctx, "hwdec", "auto-safe")
-                mpv.mpv_set_option_string(ctx, "vd-lavc-software-fallback", "yes")
-                mpv.mpv_set_option_string(ctx, "force-seekable", "yes")
-                // Nuvio-grade streaming & buffering tuning for smooth 4K/P2P playback
-                mpv.mpv_set_option_string(ctx, "cache", "yes")
-                mpv.mpv_set_option_string(ctx, "demuxer-max-bytes", "400M")
-                mpv.mpv_set_option_string(ctx, "demuxer-readahead-secs", "60")
-                mpv.mpv_set_option_string(ctx, "video-sync", "display-resample")
-                mpv.mpv_set_option_string(ctx, "volume-max", "200")
-                mpv.mpv_set_option_string(ctx, "sub-auto", "fuzzy")
-
-                if (mpv.mpv_initialize(ctx) >= 0) {
-                    initializedCtx = ctx
-                    break
-                } else {
-                    mpv.mpv_terminate_destroy(ctx)
-                }
-            }
-
-            if (initializedCtx != null) {
-                mpvHandle = initializedCtx
-                mpv.mpv_command(initializedCtx, arrayOf("loadfile", streamUrl, null))
-                mpv.mpv_set_property_string(initializedCtx, "pause", if (isPlaying) "no" else "yes")
+            val ctx = ActiveDesktopMpvManager.getOrCreateForWid(canvasReadyWid) ?: return@withContext
+            mpvHandle = ctx
+            if (loadedStreamUrl != streamUrl) {
+                loadedStreamUrl = streamUrl
+                mpv.mpv_command(ctx, arrayOf("loadfile", streamUrl, "replace", null))
+                mpv.mpv_set_property_string(ctx, "pause", if (isPlaying) "no" else "yes")
             }
         }
     }
@@ -212,7 +261,9 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            mpv.mpv_set_property_string(ctx, "pause", if (isPlaying) "no" else "yes")
+            if (ActiveDesktopMpvManager.currentHandle() === ctx) {
+                mpv.mpv_set_property_string(ctx, "pause", if (isPlaying) "no" else "yes")
+            }
         }
     }
 
@@ -222,8 +273,10 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            val sec = (targetMs.toDouble() / 1000.0).toString()
-            mpv.mpv_command(ctx, arrayOf("seek", sec, "absolute", null))
+            if (ActiveDesktopMpvManager.currentHandle() === ctx) {
+                val sec = (targetMs.toDouble() / 1000.0).toString()
+                mpv.mpv_command(ctx, arrayOf("seek", sec, "absolute", null))
+            }
         }
     }
 
@@ -232,8 +285,10 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            val sec = (subtitleDelayMs.toDouble() / 1000.0).toString()
-            mpv.mpv_set_property_string(ctx, "sub-delay", sec)
+            if (ActiveDesktopMpvManager.currentHandle() === ctx) {
+                val sec = (subtitleDelayMs.toDouble() / 1000.0).toString()
+                mpv.mpv_set_property_string(ctx, "sub-delay", sec)
+            }
         }
     }
 
@@ -242,7 +297,9 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            mpv.mpv_set_property_string(ctx, "speed", playbackSpeed.toString())
+            if (ActiveDesktopMpvManager.currentHandle() === ctx) {
+                mpv.mpv_set_property_string(ctx, "speed", playbackSpeed.toString())
+            }
         }
     }
 
@@ -251,7 +308,9 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            mpv.mpv_set_property_string(ctx, "volume", (volume * 100f).toInt().coerceIn(0, 150).toString())
+            if (ActiveDesktopMpvManager.currentHandle() === ctx) {
+                mpv.mpv_set_property_string(ctx, "volume", (volume * 100f).toInt().coerceIn(0, 150).toString())
+            }
         }
     }
 
@@ -260,6 +319,7 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
+            if (ActiveDesktopMpvManager.currentHandle() !== ctx) return@withContext
             when (aspectMode.lowercase()) {
                 "fill" -> {
                     mpv.mpv_set_property_string(ctx, "keepaspect", "yes")
@@ -276,7 +336,7 @@ actual fun NativeVideoSurface(
                     mpv.mpv_set_property_string(ctx, "panscan", "0.0")
                     mpv.mpv_set_property_string(ctx, "video-aspect-override", "-1")
                 }
-                else -> { // fit
+                else -> {
                     mpv.mpv_set_property_string(ctx, "keepaspect", "yes")
                     mpv.mpv_set_property_string(ctx, "panscan", "0.0")
                     mpv.mpv_set_property_string(ctx, "video-aspect-override", "-1")
@@ -290,9 +350,11 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            mpv.mpv_set_property_string(ctx, "sub-visibility", if (subtitlesEnabled) "yes" else "no")
-            val mpvFontSize = (subtitleFontSizeSp * 2.2f).toInt().coerceIn(24, 90)
-            mpv.mpv_set_property_string(ctx, "sub-font-size", mpvFontSize.toString())
+            if (ActiveDesktopMpvManager.currentHandle() === ctx) {
+                mpv.mpv_set_property_string(ctx, "sub-visibility", if (subtitlesEnabled) "yes" else "no")
+                val mpvFontSize = (subtitleFontSizeSp * 2.2f).toInt().coerceIn(24, 90)
+                mpv.mpv_set_property_string(ctx, "sub-font-size", mpvFontSize.toString())
+            }
         }
     }
 
@@ -302,7 +364,9 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            mpv.mpv_command(ctx, arrayOf("cycle", "audio", null))
+            if (ActiveDesktopMpvManager.currentHandle() === ctx) {
+                mpv.mpv_command(ctx, arrayOf("cycle", "audio", null))
+            }
         }
     }
 
@@ -312,8 +376,10 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            mpv.mpv_set_property_string(ctx, "sub-visibility", "yes")
-            mpv.mpv_command(ctx, arrayOf("cycle", "sub", null))
+            if (ActiveDesktopMpvManager.currentHandle() === ctx) {
+                mpv.mpv_set_property_string(ctx, "sub-visibility", "yes")
+                mpv.mpv_command(ctx, arrayOf("cycle", "sub", null))
+            }
         }
     }
 
@@ -323,20 +389,23 @@ actual fun NativeVideoSurface(
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            mpv.mpv_set_property_string(ctx, "sub-visibility", "yes")
-            mpv.mpv_command(ctx, arrayOf("sub-add", sub, "select", null))
+            if (ActiveDesktopMpvManager.currentHandle() === ctx) {
+                mpv.mpv_set_property_string(ctx, "sub-visibility", "yes")
+                mpv.mpv_command(ctx, arrayOf("sub-add", sub, "select", null))
+            }
         }
     }
 
-    // Poll real time-pos and duration from libmpv on background IO thread so UI thread is never blocked
+    // Poll real time-pos and duration from libmpv
     LaunchedEffect(mpvHandle) {
         val ctx = mpvHandle ?: return@LaunchedEffect
         val mpv = LibMpvJna.instance ?: return@LaunchedEffect
         val posRef = DoubleByReference()
         val durRef = DoubleByReference()
         while (isActive) {
-            delay(500)
+            delay(400)
             val result = withContext(Dispatchers.IO) {
+                if (ActiveDesktopMpvManager.currentHandle() !== ctx) return@withContext null
                 val posOk = mpv.mpv_get_property(ctx, "time-pos", LibMpvJna.MPV_FORMAT_DOUBLE, posRef) >= 0
                 val durOk = mpv.mpv_get_property(ctx, "duration", LibMpvJna.MPV_FORMAT_DOUBLE, durRef) >= 0
                 if (posOk && durOk && durRef.value > 0.0) {
@@ -355,13 +424,8 @@ actual fun NativeVideoSurface(
 
     DisposableEffect(Unit) {
         onDispose {
-            val ctx = mpvHandle
             mpvHandle = null
-            if (ctx != null) {
-                Thread {
-                    runCatching { LibMpvJna.instance?.mpv_terminate_destroy(ctx) }
-                }.start()
-            }
+            ActiveDesktopMpvManager.destroyCurrent()
         }
     }
 
@@ -379,6 +443,14 @@ actual fun NativeVideoSurface(
 }
 
 actual val isDesktopAwtHost: Boolean = true
+
+actual fun toggleNativeFullscreen() {
+    DesktopWindowController.onToggleFullscreen?.invoke()
+}
+
+actual fun exitNativeFullscreen() {
+    DesktopWindowController.onExitFullscreen?.invoke()
+}
 
 actual fun launchExternalPlayer(playerName: String, streamUrl: String, title: String): Boolean {
     return runCatching {
