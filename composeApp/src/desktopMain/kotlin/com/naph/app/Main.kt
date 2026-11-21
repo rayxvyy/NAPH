@@ -29,11 +29,9 @@ fun main() = application {
         position = WindowPosition.Aligned(Alignment.Center)
     )
     DesktopWindowController.onToggleFullscreen = {
-        windowState.placement = if (windowState.placement == WindowPlacement.Fullscreen) {
-            WindowPlacement.Floating
-        } else {
-            WindowPlacement.Fullscreen
-        }
+        val next = windowState.placement != WindowPlacement.Fullscreen
+        windowState.placement = if (next) WindowPlacement.Fullscreen else WindowPlacement.Floating
+        next
     }
     DesktopWindowController.onExitFullscreen = {
         if (windowState.placement == WindowPlacement.Fullscreen) {

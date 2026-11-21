@@ -240,9 +240,14 @@ actual fun NativeVideoSurface(
 
 actual val isDesktopAwtHost: Boolean = false
 
-actual fun toggleNativeFullscreen() = Unit
+actual fun toggleNativeFullscreen(): Boolean = false
 
 actual fun exitNativeFullscreen() = Unit
+
+actual fun registerDesktopVideoInteraction(
+    onMouseMove: (() -> Unit)?,
+    onDoubleClick: (() -> Unit)?
+) = Unit
 
 actual fun launchExternalPlayer(playerName: String, streamUrl: String, title: String): Boolean {
     val schemeUrl = when {

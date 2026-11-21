@@ -36,14 +36,22 @@ expect fun NativeVideoSurface(
 expect val isDesktopAwtHost: Boolean
 
 /**
- * Toggles real OS window fullscreen on Desktop (Linux/Windows). No-op on mobile where playback is already fullscreen.
+ * Toggles real OS window fullscreen on Desktop (Linux/Windows). Returns the new fullscreen state.
  */
-expect fun toggleNativeFullscreen()
+expect fun toggleNativeFullscreen(): Boolean
 
 /**
  * Exits OS window fullscreen on Desktop when leaving the player.
  */
 expect fun exitNativeFullscreen()
+
+/**
+ * Registers Desktop AWT canvas mouse-move & double-click callbacks so fullscreen auto-hides & reveals controls smoothly.
+ */
+expect fun registerDesktopVideoInteraction(
+    onMouseMove: (() -> Unit)?,
+    onDoubleClick: (() -> Unit)?
+)
 
 /**
  * Launches an external desktop/mobile media player (VLC, MPV, IINA, Infuse, Outplayer)

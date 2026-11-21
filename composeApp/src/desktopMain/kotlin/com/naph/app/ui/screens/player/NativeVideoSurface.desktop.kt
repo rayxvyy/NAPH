@@ -25,15 +25,20 @@ import java.awt.Canvas
 import java.awt.Component
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
+import java.awt.event.MouseMotionAdapter
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 
 /**
- * Window fullscreen controller wired from `Main.kt`.
+ * Window fullscreen & AWT canvas pointer bridge wired from `Main.kt` and `UnifiedVideoPlayerScreen.kt`.
  */
 object DesktopWindowController {
-    var onToggleFullscreen: (() -> Unit)? = null
+    var onToggleFullscreen: (() -> Boolean)? = null
     var onExitFullscreen: (() -> Unit)? = null
+    var onCanvasMouseMove: (() -> Unit)? = null
+    var onCanvasDoubleClick: (() -> Unit)? = null
 }
 
 /**
@@ -229,6 +234,20 @@ actual fun NativeVideoSurface(
                     override fun componentShown(e: ComponentEvent?) {
                         val wid = DesktopNativeViewResolver.resolveWindowId(self)
                         if (wid != 0L && wid != canvasReadyWid) canvasReadyWid = wid
+                    }
+                })
+                addMouseMotionListener(object : MouseMotionAdapter() {
+                    override fun mouseMoved(e: MouseEvent?) {
+                        DesktopWindowController.onCanvasMouseMove?.invoke()
+                    }
+                })
+                addMouseListener(object : MouseAdapter() {
+                    override fun mouseClicked(e: MouseEvent?) {
+                        if (e != null && e.clickCount >= 2) {
+                            DesktopWindowController.onCanvasDoubleClick?.invoke()
+                        } else {
+                            DesktopWindowController.onCanvasMouseMove?.invoke()
+                        }
                     }
                 })
             }
@@ -444,12 +463,20 @@ actual fun NativeVideoSurface(
 
 actual val isDesktopAwtHost: Boolean = true
 
-actual fun toggleNativeFullscreen() {
-    DesktopWindowController.onToggleFullscreen?.invoke()
+actual fun toggleNativeFullscreen(): Boolean {
+    return DesktopWindowController.onToggleFullscreen?.invoke() ?: false
 }
 
 actual fun exitNativeFullscreen() {
     DesktopWindowController.onExitFullscreen?.invoke()
+}
+
+actual fun registerDesktopVideoInteraction(
+    onMouseMove: (() -> Unit)?,
+    onDoubleClick: (() -> Unit)?
+) {
+    DesktopWindowController.onCanvasMouseMove = onMouseMove
+    DesktopWindowController.onCanvasDoubleClick = onDoubleClick
 }
 
 actual fun launchExternalPlayer(playerName: String, streamUrl: String, title: String): Boolean {

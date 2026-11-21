@@ -106,6 +106,8 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
     private var pendingStreamUrl: String?
     private var pendingPlaying: Bool = true
     private var currentAspectOverride: String = "-1"
+    private var lastReinitPixelSize: CGSize = .zero
+    private var pendingReinitWorkItem: DispatchWorkItem?
 
     var view: UIView {
         return containerView
@@ -113,20 +115,39 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
 
     override init() {
         super.init()
-        metalView.onBoundsResized = { [weak self] _ in
-            self?.nudgeViewportResize()
+        metalView.onBoundsResized = { [weak self] newSize in
+            self?.scheduleSwapchainReinit(for: newSize)
         }
         setupMpv()
     }
 
-    private func nudgeViewportResize() {
-        queue.async { [weak self] in
-            guard let self = self, let ctx = self.mpv else { return }
-            // Nudge libmpv VO to re-query CAMetalLayer drawableSize immediately on portrait/landscape rotation
-            mpv_set_property_string(ctx, "video-aspect-override", self.currentAspectOverride)
-            mpv_set_property_string(ctx, "video-align-x", "0")
-            mpv_set_property_string(ctx, "video-align-y", "0")
+    private func scheduleSwapchainReinit(for pixelSize: CGSize) {
+        guard isInitialized else { return }
+        // Avoid re-running if pixel dimensions barely changed
+        if abs(pixelSize.width - lastReinitPixelSize.width) < 4 &&
+           abs(pixelSize.height - lastReinitPixelSize.height) < 4 {
+            return
         }
+        pendingReinitWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.metalView.syncDrawableSize()
+            let finalSize = self.metalView.metalLayer.drawableSize
+            guard finalSize.width > 1, finalSize.height > 1 else { return }
+            self.lastReinitPixelSize = finalSize
+            self.queue.async { [weak self] in
+                guard let self = self, let ctx = self.mpv else { return }
+                // Force MoltenVK to destroy stale portrait swapchain and recreate centered landscape swapchain
+                // without interrupting audio or losing playback position!
+                mpv_set_property_string(ctx, "vo", "null")
+                mpv_set_property_string(ctx, "vo", "gpu")
+                mpv_set_property_string(ctx, "video-aspect-override", self.currentAspectOverride)
+                mpv_set_property_string(ctx, "video-align-x", "0")
+                mpv_set_property_string(ctx, "video-align-y", "0")
+            }
+        }
+        pendingReinitWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: work)
     }
 
     private func setupMpv() {
@@ -165,6 +186,7 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
             if mpv_initialize(ctx) >= 0 {
                 self.mpv = ctx
                 self.isInitialized = true
+                self.lastReinitPixelSize = self.metalView.metalLayer.drawableSize
             } else {
                 mpv_terminate_destroy(ctx)
                 return
@@ -321,6 +343,8 @@ final class NaphMpvSurfaceController: NSObject, IosMpvSurfaceController {
     }
 
     func destroy() {
+        pendingReinitWorkItem?.cancel()
+        pendingReinitWorkItem = nil
         let ctx = mpv
         mpv = nil
         isInitialized = false

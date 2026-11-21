@@ -315,8 +315,29 @@ private fun ProfileRootSectionsList(appState: NaphAppState) {
                 SettingsRowItem(
                     icon = Icons.Default.Info,
                     title = "About NAPH",
-                    subtitle = "Version 1.0.0 • Cross-Platform Media Center (Linux, Windows, iOS, Android)",
+                    subtitle = "Version 1.0.0 • Crafted by Rayxvy • Linux, Windows, Android & iOS",
                     onClick = { appState.navigateSettingsPage(ProfileSettingsPage.ABOUT) }
+                )
+            }
+
+            // Minimal signature footer
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp, bottom = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "NAPH v1.0.0",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = NaphColors.TextSecondary
+                )
+                Text(
+                    text = "Made with passion by Rayxvy",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NaphColors.TextMuted
                 )
             }
         }

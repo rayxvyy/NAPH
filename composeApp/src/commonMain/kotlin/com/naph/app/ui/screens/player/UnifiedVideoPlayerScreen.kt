@@ -183,6 +183,7 @@ fun UnifiedVideoPlayerScreen(
     var cycleEmbeddedSubTick by remember { mutableStateOf(0) }
 
     var showControls by remember { mutableStateOf(true) }
+    var isDesktopFullscreen by remember { mutableStateOf(false) }
     var isScreenLocked by remember { mutableStateOf(false) }
     var hudInteractionTick by remember { mutableStateOf(0) }
     var activeSheet by remember { mutableStateOf(PlayerSheet.NONE) }
@@ -199,15 +200,34 @@ fun UnifiedVideoPlayerScreen(
     }
 
     DisposableEffect(Unit) {
+        if (isDesktopAwtHost) {
+            registerDesktopVideoInteraction(
+                onMouseMove = {
+                    showControls = true
+                    hudInteractionTick++
+                },
+                onDoubleClick = {
+                    isDesktopFullscreen = toggleNativeFullscreen()
+                    showControls = true
+                    hudInteractionTick++
+                }
+            )
+        }
         onDispose {
+            if (isDesktopAwtHost) {
+                registerDesktopVideoInteraction(null, null)
+            }
             exitNativeFullscreen()
         }
     }
 
-    // Auto-hide mobile HUD after 3.5s while playing
-    LaunchedEffect(showControls, isPlaying, activeSheet, hudInteractionTick) {
-        if (showControls && isPlaying && activeSheet == PlayerSheet.NONE && !isDesktopAwtHost) {
-            delay(3500)
+    // Auto-hide HUD after 3s while playing:
+    // - On mobile: always auto-hides
+    // - On Desktop (Linux/Windows): auto-hides in Fullscreen for 100% edge-to-edge cinema!
+    LaunchedEffect(showControls, isPlaying, activeSheet, hudInteractionTick, isDesktopFullscreen) {
+        val shouldAutoHide = if (isDesktopAwtHost) isDesktopFullscreen else true
+        if (shouldAutoHide && showControls && isPlaying && activeSheet == PlayerSheet.NONE) {
+            delay(3000)
             showControls = false
         }
     }
@@ -568,12 +588,18 @@ fun UnifiedVideoPlayerScreen(
                             true
                         }
                         Key.F -> {
-                            toggleNativeFullscreen()
+                            isDesktopFullscreen = toggleNativeFullscreen()
+                            showControls = true
+                            hudInteractionTick++
                             true
                         }
                         Key.Escape -> {
                             if (activeSheet != PlayerSheet.NONE) {
                                 activeSheet = PlayerSheet.NONE
+                            } else if (isDesktopFullscreen) {
+                                exitNativeFullscreen()
+                                isDesktopFullscreen = false
+                                showControls = true
                             } else {
                                 exitPlayer()
                             }
@@ -589,33 +615,47 @@ fun UnifiedVideoPlayerScreen(
         if (isDesktopAwtHost) {
             // =========================================================================
             // DESKTOP (LINUX & WINDOWS):
-            // - Top bar + Video + Docked Side Panel (never occluded by AWT SwingPanel!) + Plezy Bottom Bar with Volume!
+            // - True edge-to-edge cinema in Fullscreen (bars auto-hide after 3s idle, reappear instantly on mouse move!)
+            // - Docked 340dp right-hand side panel for Subtitles / Volume / Speed (never occluded by AWT SwingPanel!)
             // =========================================================================
+            val showDesktopBars = !isDesktopFullscreen || showControls || activeSheet != PlayerSheet.NONE || !isPlaying
             Column(modifier = Modifier.fillMaxSize()) {
-                PlezyTopHeader(
-                    title = media.name,
-                    subtitle = subtitleLine,
-                    isLocked = false,
-                    showLockIcon = false,
-                    showFullscreenIcon = true,
-                    subtitlesActive = subtitlesEnabled && (selectedSubtitle != null || cycleEmbeddedSubTick > 0),
-                    isBoosted = !isMuted && volume > 1.02f,
-                    isMuted = isMuted,
-                    onBack = { exitPlayer() },
-                    onOpenAudioSpeed = {
-                        activeSheet = if (activeSheet == PlayerSheet.AUDIO_SPEED) PlayerSheet.NONE else PlayerSheet.AUDIO_SPEED
-                    },
-                    onOpenSubtitles = {
-                        activeSheet = if (activeSheet == PlayerSheet.SUBTITLES) PlayerSheet.NONE else PlayerSheet.SUBTITLES
-                    },
-                    onCycleAspect = { aspectIndex = (aspectIndex + 1) % aspectModes.size },
-                    onToggleLock = {},
-                    onToggleFullscreen = { toggleNativeFullscreen() },
-                    onOpenExternal = {
-                        activeSheet = if (activeSheet == PlayerSheet.EXTERNAL) PlayerSheet.NONE else PlayerSheet.EXTERNAL
-                    },
-                    modifier = Modifier.background(Color(0xFF0A0C10))
-                )
+                if (showDesktopBars) {
+                    PlezyTopHeader(
+                        title = media.name,
+                        subtitle = subtitleLine,
+                        isLocked = false,
+                        showLockIcon = false,
+                        showFullscreenIcon = true,
+                        subtitlesActive = subtitlesEnabled && (selectedSubtitle != null || cycleEmbeddedSubTick > 0),
+                        isBoosted = !isMuted && volume > 1.02f,
+                        isMuted = isMuted,
+                        onBack = { exitPlayer() },
+                        onOpenAudioSpeed = {
+                            activeSheet = if (activeSheet == PlayerSheet.AUDIO_SPEED) PlayerSheet.NONE else PlayerSheet.AUDIO_SPEED
+                            hudInteractionTick++
+                        },
+                        onOpenSubtitles = {
+                            activeSheet = if (activeSheet == PlayerSheet.SUBTITLES) PlayerSheet.NONE else PlayerSheet.SUBTITLES
+                            hudInteractionTick++
+                        },
+                        onCycleAspect = {
+                            aspectIndex = (aspectIndex + 1) % aspectModes.size
+                            hudInteractionTick++
+                        },
+                        onToggleLock = {},
+                        onToggleFullscreen = {
+                            isDesktopFullscreen = toggleNativeFullscreen()
+                            showControls = true
+                            hudInteractionTick++
+                        },
+                        onOpenExternal = {
+                            activeSheet = if (activeSheet == PlayerSheet.EXTERNAL) PlayerSheet.NONE else PlayerSheet.EXTERNAL
+                            hudInteractionTick++
+                        },
+                        modifier = Modifier.background(Color(0xFF0A0C10))
+                    )
+                }
 
                 // Video + Optional Right-Hand Docked Sheet (guaranteed 100% visible & clickable on Linux/Windows!)
                 Row(
@@ -698,14 +738,15 @@ fun UnifiedVideoPlayerScreen(
                     }
                 }
 
-                // Clean Plezy Desktop Bottom Bar: Razor-thin scrubber + Transport + Visible Volume/Boost control!
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0A0C10))
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                // Clean Plezy Desktop Bottom Bar (auto-hides in Fullscreen after 3s idle for 100% edge-to-edge video!)
+                if (showDesktopBars) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF0A0C10))
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                     PlezyScrubberSection(
                         positionMs = seekPreviewMs ?: positionMs,
                         durationMs = durationMs,
@@ -821,6 +862,7 @@ fun UnifiedVideoPlayerScreen(
                             )
                         }
                     }
+                }
                 }
             }
         } else {
