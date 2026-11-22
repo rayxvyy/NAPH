@@ -17,6 +17,20 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Compile Native On-Device Android P2P Engine (arm64-v8a & x86_64)
+        run: |
+          mkdir -p composeApp/src/androidMain/jniLibs/arm64-v8a
+          mkdir -p composeApp/src/androidMain/jniLibs/x86_64
+          cd tools/p2p-win
+          go mod tidy
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../../composeApp/src/androidMain/jniLibs/arm64-v8a/libnaph_p2p.so .
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../../composeApp/src/androidMain/jniLibs/x86_64/libnaph_p2p.so .
+          ls -lh ../../composeApp/src/androidMain/jniLibs/*/libnaph_p2p.so
+
       - name: Build Signed Release Android APK
         run: |
           chmod +x gradlew

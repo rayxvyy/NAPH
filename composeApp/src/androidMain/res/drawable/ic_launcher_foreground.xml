@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Subtle glowing cyan-to-violet play prism -->
+    <path android:pathData="M34,76 L34,32 L78,54 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="32"
+                android:startY="30"
+                android:endX="78"
+                android:endY="76"
+                android:type="linear">
+                <item android:color="#FF38BDF8" android:offset="0.0" />
+                <item android:color="#FF8B5CF6" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Crisp white N-Wing emblem -->
+    <path
+        android:pathData="M33,75 L33,33 L58,64 L58,33"
+        android:strokeWidth="6.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
