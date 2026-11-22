@@ -57,6 +57,16 @@ internal interface LibMpvJna : Library {
         const val MPV_FORMAT_DOUBLE = 5
 
         val instance: LibMpvJna? by lazy {
+            val os = System.getProperty("os.name").orEmpty().lowercase()
+            if (os.contains("win")) {
+                val extractedDll = extractBundledWindowsLibMpv()
+                if (extractedDll != null) {
+                    val loaded = runCatching {
+                        Native.load(extractedDll.absolutePath, LibMpvJna::class.java)
+                    }.getOrNull()
+                    if (loaded != null) return@lazy loaded
+                }
+            }
             val candidates = listOf("mpv", "libmpv.so.2", "libmpv-2", "libmpv.2.dylib")
             for (name in candidates) {
                 val loaded = runCatching {
@@ -66,6 +76,21 @@ internal interface LibMpvJna : Library {
             }
             null
         }
+
+        private fun extractBundledWindowsLibMpv(): java.io.File? = runCatching {
+            val stream = LibMpvJna::class.java.classLoader?.getResourceAsStream("native/windows/libmpv-2.dll")
+                ?: return@runCatching null
+            val outDir = java.io.File(System.getProperty("user.home"), ".naph_data/native").apply { mkdirs() }
+            val outFile = java.io.File(outDir, "libmpv-2.dll")
+            if (!outFile.exists() || outFile.length() == 0L) {
+                stream.use { input ->
+                    outFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            } else {
+                stream.close()
+            }
+            outFile
+        }.getOrNull()
     }
 }
 

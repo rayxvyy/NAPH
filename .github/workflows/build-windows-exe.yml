@@ -17,7 +17,45 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Build Native Windows Setup Installer (.exe)
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Compile Bundled Windows P2P Engine (naph_p2p_win.exe)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "composeApp/src/desktopMain/resources/native/windows" | Out-Null
+          Push-Location tools/p2p-win
+          go mod tidy
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          go build -ldflags="-s -w -H=windowsgui" -o "../../composeApp/src/desktopMain/resources/native/windows/naph_p2p_win.exe" .
+          Pop-Location
+          Get-Item "composeApp/src/desktopMain/resources/native/windows/naph_p2p_win.exe" | Format-List Name, Length
+
+      - name: Download & Bundle Official libmpv-2.dll (x86_64)
+        shell: pwsh
+        run: |
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest" -Headers @{ "User-Agent" = "NAPH-Builder" }
+          $asset = $release.assets | Where-Object { $_.name -match "^mpv-dev-x86_64-.*\.7z$" -and $_.name -notmatch "v3" } | Select-Object -First 1
+          if (-not $asset) {
+            $asset = $release.assets | Where-Object { $_.name -match "^mpv-dev-x86_64.*\.7z$" } | Select-Object -First 1
+          }
+          if (-not $asset) {
+            throw "Could not find mpv-dev-x86_64 .7z asset in shinchiro/mpv-winbuild-cmake releases"
+          }
+          Write-Host "Downloading $($asset.name)..."
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "mpv-dev.7z"
+          7z x mpv-dev.7z -ompv-extracted -y | Out-Null
+          $dll = Get-ChildItem -Path "mpv-extracted" -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1
+          if (-not $dll) {
+            throw "libmpv-2.dll not found inside $($asset.name)"
+          }
+          Copy-Item $dll.FullName "composeApp/src/desktopMain/resources/native/windows/libmpv-2.dll"
+          Get-Item "composeApp/src/desktopMain/resources/native/windows/libmpv-2.dll" | Format-List Name, Length
+
+      - name: Build Standalone Windows Setup Installer (.exe)
         shell: pwsh
         run: |
           .\gradlew.bat :composeApp:packageExe --console=plain
@@ -34,10 +72,9 @@ jobs:
           name: NAPH-1.0.0-windows-setup-exe
           path: dist-windows/NAPH-1.0.0-windows-x64-setup.exe
 
-      - name: Attach Windows Setup EXE to release v1.0.0 and remove old ZIP
+      - name: Attach Standalone Windows Setup EXE to release v1.0.0
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload v1.0.0 dist-windows/NAPH-1.0.0-windows-x64-setup.exe --clobber
-          gh release delete-asset v1.0.0 NAPH-1.0.0-windows-x64.zip --yes 2>$null; exit 0

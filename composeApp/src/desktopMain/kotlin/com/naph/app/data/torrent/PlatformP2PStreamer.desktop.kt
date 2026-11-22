@@ -27,6 +27,7 @@ actual object PlatformP2PStreamer {
     private val scope = CoroutineScope(Dispatchers.IO)
     private var activeJob: Job? = null
     private var engine: NuvioEngine? = null
+    private var windowsP2pProcess: Process? = null
     private var currentStreamId: String? = null
     private var lastDownloadedBytes: Long = 0L
 
@@ -116,6 +117,12 @@ actual object PlatformP2PStreamer {
             return
         }
 
+        val isWindows = System.getProperty("os.name").orEmpty().lowercase().contains("win")
+        if (isWindows) {
+            startWindowsBundledGoP2P(infoHash, stream, settings, onTelemetryUpdate, onStreamReady, onStreamError)
+            return
+        }
+
         activeJob = scope.launch {
             try {
                 val activeEngine = getOrCreateEngine(settings)
@@ -190,9 +197,123 @@ actual object PlatformP2PStreamer {
         }
     }
 
+    private fun extractWindowsP2pExecutable(): File? = runCatching {
+        val stream = PlatformP2PStreamer::class.java.classLoader?.getResourceAsStream("native/windows/naph_p2p_win.exe")
+            ?: return@runCatching null
+        val outDir = File(System.getProperty("user.home"), ".naph_data/native").apply { mkdirs() }
+        val outFile = File(outDir, "naph_p2p_win.exe")
+        if (!outFile.exists() || outFile.length() == 0L) {
+            stream.use { input ->
+                outFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        } else {
+            stream.close()
+        }
+        outFile
+    }.getOrNull()
+
+    private fun startWindowsBundledGoP2P(
+        infoHash: String,
+        stream: MediaStream,
+        settings: P2PSettings,
+        onTelemetryUpdate: (P2PStreamTelemetry) -> Unit,
+        onStreamReady: (String) -> Unit,
+        onStreamError: (String) -> Unit
+    ) {
+        stopWindowsProcess()
+        activeJob = scope.launch {
+            try {
+                val exe = extractWindowsP2pExecutable()
+                    ?: throw IllegalStateException("Bundled Windows P2P engine (naph_p2p_win.exe) not found")
+                val cacheDir = File(System.getProperty("java.io.tmpdir"), "naph_p2p_cache").apply { mkdirs() }
+                onTelemetryUpdate(
+                    P2PStreamTelemetry(
+                        infoHash = infoHash,
+                        fileName = stream.behaviorHints?.filename ?: stream.displayDetails.take(48),
+                        localStreamUrl = "",
+                        isReadyForPlayback = false,
+                        bufferProgressPercent = 5f,
+                        connectedPeers = 0,
+                        totalSeeds = stream.parsedSeeders ?: 0
+                    )
+                )
+
+                val proc = ProcessBuilder(
+                    exe.absolutePath,
+                    "-hash", infoHash,
+                    "-fileIdx", (stream.fileIdx ?: -1).toString(),
+                    "-cacheDir", cacheDir.absolutePath
+                ).redirectErrorStream(true).start()
+                windowsP2pProcess = proc
+
+                var readyUrl = ""
+                var readyFileName = stream.behaviorHints?.filename ?: "stream.mkv"
+                var readyFileSize = 0L
+
+                proc.inputStream.bufferedReader().useLines { lines ->
+                    for (line in lines) {
+                        if (!isActive) break
+                        when {
+                            line.startsWith("READY|") -> {
+                                val parts = line.split("|")
+                                readyUrl = parts.getOrNull(1).orEmpty()
+                                readyFileName = parts.getOrNull(2).orEmpty().ifBlank { readyFileName }
+                                readyFileSize = parts.getOrNull(3)?.toLongOrNull() ?: 0L
+                                if (readyUrl.isNotBlank()) {
+                                    onStreamReady(readyUrl)
+                                }
+                            }
+                            line.startsWith("STATS|") -> {
+                                val parts = line.split("|")
+                                val peers = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                                val seeds = parts.getOrNull(2)?.toIntOrNull() ?: 0
+                                val downBps = parts.getOrNull(3)?.toLongOrNull() ?: 0L
+                                val completed = parts.getOrNull(4)?.toLongOrNull() ?: 0L
+                                val total = parts.getOrNull(5)?.toLongOrNull() ?: readyFileSize
+                                lastDownloadedBytes = completed
+                                val pct = if (total > 0L) ((completed.toDouble() / total.toDouble()) * 100.0).toFloat().coerceIn(0f, 100f) else 0f
+                                onTelemetryUpdate(
+                                    P2PStreamTelemetry(
+                                        infoHash = infoHash,
+                                        fileName = readyFileName,
+                                        localStreamUrl = readyUrl,
+                                        isReadyForPlayback = readyUrl.isNotBlank(),
+                                        bufferProgressPercent = pct,
+                                        downloadSpeedBytesPerSec = downBps,
+                                        connectedPeers = peers,
+                                        totalSeeds = seeds.coerceAtLeast(stream.parsedSeeders ?: 0),
+                                        downloadedBytes = completed,
+                                        totalFileBytes = total,
+                                        headerPiecesReady = readyUrl.isNotBlank()
+                                    )
+                                )
+                            }
+                            line.startsWith("ERROR|") -> {
+                                onStreamError("P2P Engine Error: ${line.removePrefix("ERROR|")}")
+                            }
+                        }
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                onStreamError("P2P Engine Error: ${e.message ?: "Failed to start Windows P2P engine"}")
+            }
+        }
+    }
+
+    private fun stopWindowsProcess() {
+        val p = windowsP2pProcess
+        windowsP2pProcess = null
+        if (p != null) {
+            runCatching { p.destroyForcibly() }
+        }
+    }
+
     actual fun stopNativeP2PStream(settings: P2PSettings): Long {
         activeJob?.cancel()
         activeJob = null
+        stopWindowsProcess()
         val cleared = lastDownloadedBytes
         lastDownloadedBytes = 0L
 
