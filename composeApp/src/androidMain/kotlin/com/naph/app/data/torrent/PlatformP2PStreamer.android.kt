@@ -158,7 +158,7 @@ actual object PlatformP2PStreamer {
         stopProcess()
         val cleared = lastDownloadedBytes
         lastDownloadedBytes = 0L
-        if (settings.autoDeleteCacheOnExit) {
+        if (settings.useTempCacheAutoClean && !settings.keepDownloadedFiles) {
             runCatching {
                 appContext?.cacheDir?.let { File(it, "naph_p2p_cache").deleteRecursively() }
             }
