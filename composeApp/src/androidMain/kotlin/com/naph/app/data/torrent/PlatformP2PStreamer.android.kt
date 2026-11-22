@@ -80,7 +80,7 @@ actual object PlatformP2PStreamer {
                     )
                 )
 
-                val extraTrackers = stream.sources
+                val extraTrackers = stream.sources.orEmpty()
                     .filter { it.startsWith("tracker:") }
                     .map { it.removePrefix("tracker:").trim() }
                     .filter { it.isNotBlank() }
