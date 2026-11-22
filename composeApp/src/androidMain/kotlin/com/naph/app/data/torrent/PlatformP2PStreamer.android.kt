@@ -80,12 +80,23 @@ actual object PlatformP2PStreamer {
                     )
                 )
 
-                val proc = ProcessBuilder(
+                val extraTrackers = stream.sources
+                    .filter { it.startsWith("tracker:") }
+                    .map { it.removePrefix("tracker:").trim() }
+                    .filter { it.isNotBlank() }
+                    .joinToString(",")
+
+                val cmd = mutableListOf(
                     p2pBin.absolutePath,
                     "-hash", infoHash,
                     "-fileIdx", (stream.fileIdx ?: -1).toString(),
                     "-cacheDir", cacheDir.absolutePath
-                ).redirectErrorStream(true).start()
+                )
+                if (extraTrackers.isNotBlank()) {
+                    cmd += listOf("-trackers", extraTrackers)
+                }
+
+                val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
                 p2pProcess = proc
 
                 var readyUrl = ""

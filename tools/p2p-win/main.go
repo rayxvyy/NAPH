@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
@@ -15,6 +16,30 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
 )
+
+// Android does not have /etc/resolv.conf, which breaks Go's pure-Go DNS resolver (CGO_ENABLED=0).
+// Automatically route DNS through 1.1.1.1 / 8.8.8.8 when /etc/resolv.conf is absent!
+func initAndroidDnsFallback() {
+	if _, err := os.Stat("/etc/resolv.conf"); err == nil {
+		return
+	}
+	dnsServers := []string{"1.1.1.1:53", "8.8.8.8:53", "9.9.9.9:53"}
+	net.DefaultResolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 5 * time.Second}
+			var lastErr error
+			for _, srv := range dnsServers {
+				conn, err := d.DialContext(ctx, "udp", srv)
+				if err == nil {
+					return conn, nil
+				}
+				lastErr = err
+			}
+			return nil, lastErr
+		},
+	}
+}
 
 var defaultTrackers = []string{
 	"udp://tracker.opentrackr.org:1337/announce",
@@ -59,9 +84,12 @@ func pickTargetFile(t *torrent.Torrent, requestedIdx int) *torrent.File {
 }
 
 func main() {
+	initAndroidDnsFallback()
+
 	hashFlag := flag.String("hash", "", "BitTorrent infoHash")
 	fileIdxFlag := flag.Int("fileIdx", -1, "Requested file index (-1 for largest video)")
 	cacheDirFlag := flag.String("cacheDir", "", "Cache directory")
+	trackersFlag := flag.String("trackers", "", "Comma-separated extra tracker URLs")
 	flag.Parse()
 
 	infoHash := strings.ToLower(strings.TrimSpace(*hashFlag))
@@ -100,9 +128,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	allTrackers := make([]string, 0, len(defaultTrackers)+8)
+	if strings.TrimSpace(*trackersFlag) != "" {
+		for _, tr := range strings.Split(*trackersFlag, ",") {
+			tr = strings.TrimSpace(tr)
+			if tr != "" {
+				allTrackers = append(allTrackers, tr)
+			}
+		}
+	}
+	allTrackers = append(allTrackers, defaultTrackers...)
+
 	spec := &torrent.TorrentSpec{
 		InfoHash: ih,
-		Trackers: [][]string{defaultTrackers},
+		Trackers: [][]string{allTrackers},
 	}
 	t, _, err := client.AddTorrentSpec(spec)
 	if err != nil {
@@ -110,10 +149,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Wait up to 45s for torrent metadata
+	// Wait up to 75s for torrent metadata
 	select {
 	case <-t.GotInfo():
-	case <-time.After(45 * time.Second):
+	case <-time.After(75 * time.Second):
 		fmt.Println("ERROR|Timed out fetching torrent metadata from peers")
 		os.Exit(1)
 	}
