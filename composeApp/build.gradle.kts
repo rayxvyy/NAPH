@@ -153,6 +153,8 @@ compose.desktop {
             windows {
                 shortcut = true
                 menuGroup = "NAPH"
+                dirChooser = true
+                perUserInstall = true
                 upgradeUuid = "8d3e4112-90c8-4c16-b51b-94f891a2e455"
             }
         }

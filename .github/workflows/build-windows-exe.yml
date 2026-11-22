@@ -1,0 +1,43 @@
+name: Build Windows Setup EXE
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build Native Windows Setup Installer (.exe)
+        shell: pwsh
+        run: |
+          .\gradlew.bat :composeApp:packageExe --console=plain
+          New-Item -ItemType Directory -Force -Path dist-windows | Out-Null
+          $exe = Get-ChildItem -Path "composeApp/build/compose/binaries/main/exe" -Filter "*.exe" | Select-Object -First 1
+          if (-not $exe) {
+            throw "No .exe installer produced by :composeApp:packageExe"
+          }
+          Copy-Item $exe.FullName "dist-windows/NAPH-1.0.0-windows-x64-setup.exe"
+          Get-Item "dist-windows/NAPH-1.0.0-windows-x64-setup.exe" | Format-List Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NAPH-1.0.0-windows-setup-exe
+          path: dist-windows/NAPH-1.0.0-windows-x64-setup.exe
+
+      - name: Attach Windows Setup EXE to release v1.0.0 and remove old ZIP
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload v1.0.0 dist-windows/NAPH-1.0.0-windows-x64-setup.exe --clobber
+          gh release delete-asset v1.0.0 NAPH-1.0.0-windows-x64.zip --yes 2>$null; exit 0
